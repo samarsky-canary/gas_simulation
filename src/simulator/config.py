@@ -53,6 +53,8 @@ class ScenarioConfig(BaseModel):
     dp0_kpa: float = Field(default=1.2, gt=0)
     dp_warn_kpa: float = Field(default=5.0, gt=0)
     dp_crit_kpa: float = Field(default=10.0, gt=0)
+    planned_maintenance_rul_h: float = Field(default=72.0, gt=0)
+    urgent_maintenance_rul_h: float = Field(default=12.0, gt=0)
     c0: float = Field(default=0.05, ge=0, le=1)
     k_s_per_hour: float = Field(default=4e-4, ge=0)
     alpha_flow: float = Field(default=2.0, gt=0)
@@ -86,6 +88,8 @@ class ScenarioConfig(BaseModel):
             raise ValueError("q_min_m3h must be lower than q_max_m3h")
         if self.dp_warn_kpa >= self.dp_crit_kpa:
             raise ValueError("dp_warn_kpa must be lower than dp_crit_kpa")
+        if self.urgent_maintenance_rul_h >= self.planned_maintenance_rul_h:
+            raise ValueError("urgent_maintenance_rul_h must be lower than planned_maintenance_rul_h")
         if self.p_min_mpa >= self.p_max_mpa:
             raise ValueError("p_min_mpa must be lower than p_max_mpa")
         if self.stuck_min_steps > self.stuck_max_steps:
