@@ -1,0 +1,45 @@
+filter_id: F-001
+scenario_name: slow_clogging
+start_time: "2026-01-01T00:00:00+03:00"
+duration_days: 90
+step_minutes: 5
+seed: 42
+
+q_nominal_m3h: 600
+q_min_m3h: 150
+q_max_m3h: 1200
+a_q: 0.12
+q_weekly_amp: 0.05
+
+p_in_nominal_mpa: 0.60
+p_min_mpa: 0.10
+p_max_mpa: 1.20
+a_p_mpa: 0.015
+
+t_nominal_c: 15
+t_min_c: -30
+t_max_c: 50
+a_t_c: 4
+
+dp0_kpa: 1.2
+dp_warn_kpa: 5.0
+dp_crit_kpa: 10.0
+
+c0: 0.05
+k_s_per_hour: 0.0004
+alpha_flow: 2.0
+gamma_load: 1.0
+k_c: 8.0
+beta: 1.0
+k_mu_per_c: 0.0025
+
+sigma_p_mpa: 0.0003
+sigma_q_rel: 0.01
+sigma_t_abs_c: 0.3
+sigma_dp_kpa: 0.10
+use_dp_sensor: false
+
+p_missing: 0.005
+p_spike: 0.001
+p_stuck: 0.0005
+bias_drift_mpa_per_day: 0.0

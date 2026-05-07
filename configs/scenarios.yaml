@@ -1,0 +1,19 @@
+normal:
+  scenario_name: normal
+  duration_days: 30
+
+slow_clogging:
+  scenario_name: slow_clogging
+  duration_days: 90
+
+rapid_clogging:
+  scenario_name: rapid_clogging
+  duration_days: 45
+
+flow_spikes:
+  scenario_name: flow_spikes
+  duration_days: 30
+
+maintenance_reset:
+  scenario_name: maintenance_reset
+  duration_days: 90
