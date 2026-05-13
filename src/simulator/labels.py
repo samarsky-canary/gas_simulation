@@ -9,20 +9,18 @@ from src.simulator.config import ScenarioConfig
 def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Добавляет диагностические состояния, тревоги, RUL и простые rule-признаки."""
     out = df.copy()
-    true_dp = out["delta_p_true_kpa"].to_numpy()
-    obs_dp = out["delta_p_kpa"].to_numpy()
+    true_dp_norm = _true_delta_p_norm(cfg, out)
+    obs_dp_norm = _observed_delta_p_norm(cfg, out)
 
-    out["state_true"] = _states(true_dp, cfg)
-    out["state_obs"] = _states(obs_dp, cfg)
+    out["delta_p_norm_q2"] = obs_dp_norm
+    out["state_true"] = _states(true_dp_norm, cfg)
+    out["state_obs"] = _states(obs_dp_norm, cfg)
     out.loc[out["quality_code"] != "good", "state_obs"] = "unknown"
     out["alarm_flag"] = out["state_obs"].isin(["warning", "critical"])
-    out["rul_oracle_h"] = _rul_oracle(true_dp, cfg)
+    out["rul_oracle_h"] = _rul_oracle(true_dp_norm, cfg)
     out["rul_analytic_h"] = _rul_analytic(cfg, out)
     out["is_censored"] = out["rul_oracle_h"].isna()
-    out["delta_p_norm_q2"] = out["delta_p_kpa"] / np.maximum(
-        (out["q_m3h"] / cfg.q_nominal_m3h) ** 2, 1e-3
-    )
-    out["rule_health_index"] = (out["delta_p_kpa"] / cfg.dp_crit_kpa).clip(lower=0, upper=1)
+    out["rule_health_index"] = (out["delta_p_norm_q2"] / cfg.dp_crit_kpa).clip(lower=0, upper=1)
     return out
 
 
@@ -50,15 +48,29 @@ def _rul_oracle(delta_p_true: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
 
 
 def _rul_analytic(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
-    """Оценивает RUL аналитически через текущий уровень засорения и локальную скорость деградации."""
+    """Оценивает RUL аналитически через уровень засорения и нормированный critical-порог."""
     q = df["q_true_m3h"].to_numpy()
-    t_c = df["t_true_c"].to_numpy()
     clog = df["clog_level"].to_numpy()
-    flow_factor = np.maximum(q / cfg.q_nominal_m3h, 1e-6) ** cfg.alpha_flow
-    temp_factor = np.exp(cfg.k_mu_per_c * (cfg.t_nominal_c - t_c))
-    denom = cfg.dp0_kpa * flow_factor * temp_factor
-    c_crit = ((cfg.dp_crit_kpa / denom - 1.0) / cfg.k_c).clip(min=0.0, max=1.0)
-    c_crit = c_crit ** (1.0 / cfg.beta)
+    c_crit_raw = (cfg.dp_crit_kpa / cfg.dp0_kpa - 1.0) / cfg.k_c
+    c_crit = float(np.clip(c_crit_raw, 0.0, 1.0)) ** (1.0 / cfg.beta)
     load = np.maximum(q / cfg.q_nominal_m3h, 1e-6) ** cfg.gamma_load
     rate = np.maximum(cfg.k_s_per_hour * load, 1e-9)
     return np.maximum(c_crit - clog, 0.0) / rate
+
+
+def _true_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
+    """Нормирует clean-перепад, чтобы состояние отражало засорение, а не режим расхода."""
+    q = df["q_true_m3h"].to_numpy()
+    t_c = df["t_true_c"].to_numpy()
+    flow_factor = np.maximum(q / cfg.q_nominal_m3h, 1e-6) ** cfg.alpha_flow
+    temp_factor = np.exp(cfg.k_mu_per_c * (cfg.t_nominal_c - t_c))
+    return df["delta_p_true_kpa"].to_numpy() / np.maximum(flow_factor * temp_factor, 1e-3)
+
+
+def _observed_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
+    """Нормирует наблюдаемый перепад по расходу и относительной плотности газа."""
+    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
+        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
+    )
+    flow_density = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel
+    return df["delta_p_kpa"] / np.maximum(flow_density, 1e-3)

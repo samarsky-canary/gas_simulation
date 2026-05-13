@@ -263,8 +263,8 @@ def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
         (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
     )
-    delta_p_norm = df["delta_p_kpa"] / ((df["q_m3h"] / cfg.q_nominal_m3h) ** 2).clip(
-        lower=1e-3
+    delta_p_norm = df["delta_p_kpa"] / (
+        ((df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel).clip(lower=1e-3)
     )
     dataset = pd.DataFrame(
         {
@@ -333,7 +333,7 @@ def _dataset_schema_markdown() -> str:
         ("T_C", "float", "°C", "Наблюдаемая температура газа."),
         ("rho_rel", "float", "отн. ед.", "Относительная плотность, рассчитанная из наблюдаемых P и T."),
         ("clog_level", "float", "0..1", "Скрытый уровень засорения симулятора."),
-        ("deltaP_norm_kPa", "float", "кПа", "Перепад, нормированный на квадрат расхода."),
+        ("deltaP_norm_kPa", "float", "кПа", "Перепад, нормированный на расход и относительную плотность."),
         ("state", "category", "-", "Состояние по наблюдаемому перепаду: normal/warning/critical/unknown."),
         ("RUL_oracle_h", "float", "ч", "Истинный RUL до критического порога, доступен только в синтетике."),
         ("RUL_analytic_h", "float", "ч", "Аналитическая оценка остаточного ресурса."),

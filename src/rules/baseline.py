@@ -14,6 +14,7 @@ RULE_COLUMNS = [
     "filter_id",
     "scenario_id",
     "delta_p_kpa",
+    "delta_p_norm_kpa",
     "rul_analytic_h",
     "quality_code",
     "rule_state",
@@ -31,6 +32,7 @@ RU_COLUMNS = {
     "filter_id": "идентификатор_фильтра",
     "scenario_id": "сценарий",
     "delta_p_kpa": "перепад_давления_кпа",
+    "delta_p_norm_kpa": "нормированный_перепад_давления_кпа",
     "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
     "quality_code": "код_качества",
     "rule_state": "состояние_по_правилам",
@@ -82,13 +84,14 @@ RU_VALUES = {
 def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Применяет пороговые правила состояния и рекомендации обслуживания."""
     result = df.copy()
-    # Состояние определяется только по наблюдаемому перепаду давления.
+    result["delta_p_norm_kpa"] = _delta_p_norm(cfg, result)
+    # Состояние определяется по нормированному перепаду, чтобы скачок расхода не выглядел как засорение.
     result["rule_state"] = np.select(
         [
-            result["delta_p_kpa"].isna(),
-            result["delta_p_kpa"] < cfg.dp_warn_kpa,
-            result["delta_p_kpa"] < cfg.dp_crit_kpa,
-            result["delta_p_kpa"] >= cfg.dp_crit_kpa,
+            result["delta_p_norm_kpa"].isna(),
+            result["delta_p_norm_kpa"] < cfg.dp_warn_kpa,
+            result["delta_p_norm_kpa"] < cfg.dp_crit_kpa,
+            result["delta_p_norm_kpa"] >= cfg.dp_crit_kpa,
         ],
         ["unknown", "normal", "warning", "critical"],
         default="unknown",
@@ -129,13 +132,13 @@ def export_rule_baseline(
 def _reason(cfg: ScenarioConfig, row: pd.Series) -> str:
     """Формирует текстовое объяснение, почему правило выдало состояние и рекомендацию."""
     if row["rule_state"] == "unknown":
-        return "quality_code=missing or delta_p_kpa is NaN"
+        return "quality_code=missing or delta_p_norm_kpa is NaN"
     if row["rule_state"] == "normal":
-        state_rule = f"delta_p_kpa < {cfg.dp_warn_kpa}"
+        state_rule = f"delta_p_norm_kpa < {cfg.dp_warn_kpa}"
     elif row["rule_state"] == "warning":
-        state_rule = f"{cfg.dp_warn_kpa} <= delta_p_kpa < {cfg.dp_crit_kpa}"
+        state_rule = f"{cfg.dp_warn_kpa} <= delta_p_norm_kpa < {cfg.dp_crit_kpa}"
     else:
-        state_rule = f"delta_p_kpa >= {cfg.dp_crit_kpa}"
+        state_rule = f"delta_p_norm_kpa >= {cfg.dp_crit_kpa}"
 
     recommendation = row["rule_recommendation"]
     if recommendation == "urgent_maintenance":
@@ -160,20 +163,29 @@ def _to_russian_csv(baseline: pd.DataFrame, path: Path) -> None:
     localized.to_csv(path, index=False, encoding="utf-8-sig")
 
 
+def _delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
+    """Считает нормированный перепад для rule layer по наблюдаемым каналам."""
+    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
+        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
+    )
+    flow_density = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel
+    return df["delta_p_kpa"] / flow_density.clip(lower=1e-3)
+
+
 def _description(cfg: ScenarioConfig) -> str:
     """Генерирует markdown-описание пороговой логики baseline-модели."""
     return "\n".join(
         [
             "# Rule-based baseline",
             "",
-            "Регламентно-логическая baseline-модель использует только наблюдаемый перепад давления и аналитический RUL.",
+            "Регламентно-логическая baseline-модель использует нормированный перепад давления и аналитический RUL.",
             "",
             "## Правила состояния",
             "",
-            f"- Если `delta_p_kpa < {cfg.dp_warn_kpa}`, то `rule_state = normal`.",
-            f"- Если `{cfg.dp_warn_kpa} <= delta_p_kpa < {cfg.dp_crit_kpa}`, то `rule_state = warning`.",
-            f"- Если `delta_p_kpa >= {cfg.dp_crit_kpa}`, то `rule_state = critical`.",
-            "- Если `delta_p_kpa` отсутствует или строка помечена как missing, то `rule_state = unknown`.",
+            f"- Если `delta_p_norm_kpa < {cfg.dp_warn_kpa}`, то `rule_state = normal`.",
+            f"- Если `{cfg.dp_warn_kpa} <= delta_p_norm_kpa < {cfg.dp_crit_kpa}`, то `rule_state = warning`.",
+            f"- Если `delta_p_norm_kpa >= {cfg.dp_crit_kpa}`, то `rule_state = critical`.",
+            "- Если `delta_p_norm_kpa` отсутствует или строка помечена как missing, то `rule_state = unknown`.",
             "",
             "## Правила рекомендаций",
             "",

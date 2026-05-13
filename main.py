@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.features import build_features, export_features
+from src.hybrid import build_hybrid_decisions, export_hybrid_decisions
 from src.lstm import build_lstm_windows, export_lstm_windows
 from src.ml import train_and_export_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
@@ -43,6 +44,12 @@ OUTPUT_LABELS = {
     "ml_report": "ML baseline отчет",
     "rul_model": "модель RandomForest для RUL",
     "state_model": "модель RandomForest для state",
+    "hybrid_decisions_csv": "гибридные решения CSV",
+    "hybrid_decisions_parquet": "гибридные решения Parquet",
+    "hybrid_decisions_ru_csv": "гибридные решения CSV на русском",
+    "hybrid_description": "описание гибридной логики",
+    "hybrid_decision_packages_jsonl": "пакеты объяснения решений JSONL",
+    "hybrid_decision_cards_md": "карточки объяснения решений Markdown",
     "lstm_rul_npz": "LSTM окна для RUL",
     "lstm_state_npz": "LSTM окна для state",
     "lstm_metadata": "метаданные LSTM-окон",
@@ -62,6 +69,9 @@ def main() -> None:
     rule_baseline = apply_rule_baseline(cfg, df)
     rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir)
     ml_paths = train_and_export_ml_baseline(dataset, output_dir, features)
+    ml_predictions = pd.read_parquet(ml_paths["ml_predictions_parquet"])
+    hybrid_decisions = build_hybrid_decisions(cfg, dataset, features, ml_predictions)
+    hybrid_paths = export_hybrid_decisions(hybrid_decisions, output_dir)
     lstm_windows = build_lstm_windows(cfg, dataset)
     lstm_paths = export_lstm_windows(cfg, lstm_windows, output_dir)
     plot_paths = build_plots(cfg, df, output_dir)
@@ -83,6 +93,10 @@ def main() -> None:
         print(f"- {label}: {path}")
     print("Обучен ML baseline:")
     for name, path in ml_paths.items():
+        label = OUTPUT_LABELS.get(name, name)
+        print(f"- {label}: {path}")
+    print("Создана гибридная логика решений:")
+    for name, path in hybrid_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Созданы LSTM окна:")

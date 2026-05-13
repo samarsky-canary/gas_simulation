@@ -16,6 +16,7 @@ from src.simulator.config import ScenarioConfig
 STATE_TO_CODE = {"unknown": -1, "normal": 0, "warning": 1, "critical": 2}
 STATE_TICKS = [-1, 0, 1, 2]
 STATE_LABELS = ["неизвестно", "норма", "предупреждение", "критическое"]
+STATE_SMOOTH_HOURS = 3
 
 
 def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
@@ -44,7 +45,7 @@ def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict
     _plot_delta_p(cfg, data, paths["delta_p"])
     _plot_clog(data, paths["clog"])
     _plot_rul(data, paths["rul"])
-    _plot_state(data, paths["state"])
+    _plot_state(cfg, data, paths["state"])
     _plot_delta_p_norm(data, paths["delta_p_norm"])
     _plot_delta_p_vs_clog(cfg, data, paths["delta_p_vs_clog"])
     _plot_dashboard(cfg, data, paths["dashboard"])
@@ -108,14 +109,43 @@ def _plot_rul(df: pd.DataFrame, path: Path) -> None:
     _save(fig, path)
 
 
-def _plot_state(df: pd.DataFrame, path: Path) -> None:
-    """Показывает дискретное наблюдаемое состояние фильтра во времени."""
+def _plot_state(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
+    """Показывает raw-состояние и устойчивое состояние по сглаженному deltaP_norm."""
     fig, ax = plt.subplots(figsize=(14, 4))
-    codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
-    ax.step(df["timestamp"], codes, where="post", color="#111111", linewidth=1.0)
+    raw_codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
+    stable_codes = _stable_state_codes(cfg, df)
+    unknown_raw = raw_codes.eq(-1)
+
+    ax.step(
+        df["timestamp"],
+        raw_codes,
+        where="post",
+        color="#9ca3af",
+        linewidth=0.6,
+        alpha=0.45,
+        label="raw state",
+    )
+    ax.step(
+        df["timestamp"],
+        stable_codes,
+        where="post",
+        color="#111111",
+        linewidth=1.4,
+        label=f"устойчивое состояние, окно {STATE_SMOOTH_HOURS} ч",
+    )
+    if unknown_raw.any():
+        ax.scatter(
+            df.loc[unknown_raw, "timestamp"],
+            raw_codes.loc[unknown_raw],
+            color="#d62728",
+            s=8,
+            alpha=0.55,
+            label="raw unknown / плохие данные",
+        )
     ax.set_yticks(STATE_TICKS)
     ax.set_yticklabels(STATE_LABELS)
-    _style_time_axis(ax, "Наблюдаемое состояние фильтра state(t)", "Состояние")
+    ax.legend(loc="best")
+    _style_time_axis(ax, "Состояние фильтра state(t): raw и сглаженное", "Состояние")
     _save(fig, path)
 
 
@@ -187,7 +217,10 @@ def _plot_dashboard(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
     axes[4].set_ylabel("RUL, ч")
     axes[4].legend(loc="best")
 
-    axes[5].step(df["timestamp"], df["state_obs"].map(STATE_TO_CODE).fillna(-1), where="post", color="#111111", linewidth=0.9)
+    raw_codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
+    stable_codes = _stable_state_codes(cfg, df)
+    axes[5].step(df["timestamp"], raw_codes, where="post", color="#9ca3af", linewidth=0.5, alpha=0.45)
+    axes[5].step(df["timestamp"], stable_codes, where="post", color="#111111", linewidth=1.1)
     axes[5].set_ylabel("state")
     axes[5].set_yticks(STATE_TICKS)
     axes[5].set_yticklabels(STATE_LABELS)
@@ -207,6 +240,21 @@ def _rolling(df: pd.DataFrame, column: str, cfg: ScenarioConfig, hours: int) -> 
     """Считает скользящее среднее по заданному числу часов."""
     window = max(int(hours * 60 / cfg.step_minutes), 1)
     return df[column].rolling(window, min_periods=max(window // 4, 1)).mean()
+
+
+def _stable_state_codes(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
+    """Строит устойчивое состояние по сглаженному нормированному перепаду для графика."""
+    window = max(int(STATE_SMOOTH_HOURS * 60 / cfg.step_minutes), 1)
+    min_periods = max(window // 4, 1)
+    dp_smooth = df["delta_p_norm_q2"].rolling(window, min_periods=min_periods).median()
+    codes = pd.Series(-1, index=df.index, dtype="float64")
+    codes.loc[dp_smooth < cfg.dp_warn_kpa] = 0
+    codes.loc[(dp_smooth >= cfg.dp_warn_kpa) & (dp_smooth < cfg.dp_crit_kpa)] = 1
+    codes.loc[dp_smooth >= cfg.dp_crit_kpa] = 2
+
+    bad_data_rate = df["quality_code"].ne("good").rolling(window, min_periods=1).mean()
+    codes.loc[bad_data_rate > 0.5] = -1
+    return codes
 
 
 def _style_time_axis(ax: plt.Axes, title: str, ylabel: str) -> None:
@@ -238,11 +286,13 @@ def _description() -> str:
             "- `03_perepad_delta_p.png` - наблюдаемый перепад давления с порогами warning/critical и 24-часовым средним.",
             "- `04_zasorenie_clog_level.png` - скрытый уровень засорения фильтра.",
             "- `05_ostatochnyi_resurs_rul.png` - oracle и аналитический остаточный ресурс.",
-            "- `06_sostoyanie_filtra.png` - наблюдаемое состояние фильтра.",
-            "- `07_normirovannyi_perepad.png` - перепад, нормированный на квадрат расхода.",
+            f"- `06_sostoyanie_filtra.png` - raw-состояние и устойчивое состояние по сглаженному `deltaP_norm`, окно {STATE_SMOOTH_HOURS} ч.",
+            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход и относительную плотность газа.",
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
+            "",
+            "На графике состояния исходный `state_obs` оставлен полупрозрачным, а основная линия строится по сглаженному `deltaP_norm`. Краткие `unknown` из-за пропусков показываются как индикатор качества данных, но не ломают устойчивый тренд состояния.",
             "",
         ]
     )

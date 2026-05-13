@@ -70,7 +70,7 @@ FEATURE_DESCRIPTIONS = [
     {
         "name": "deltaP_norm_kPa",
         "meaning": "Перепад давления, очищенный от влияния расхода.",
-        "formula": "deltaP_kPa / max((Q_m3h / Q_nominal)^2, eps)",
+        "formula": "deltaP_kPa / max((Q_m3h / Q_nominal)^2 * rho_rel, eps)",
         "use": "Главный признак деградации для правил и baseline-моделей.",
     },
     {
@@ -119,8 +119,13 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     six_hours = _window_steps(cfg, hours=6)
     dt_h = cfg.step_minutes / 60.0
 
-    # Нормировка на квадрат расхода отделяет рост сопротивления фильтра от режима потока.
-    flow_factor = np.maximum((features["q_m3h"] / cfg.q_nominal_m3h) ** 2, 1e-3)
+    # Нормировка на расход и плотность отделяет рост сопротивления фильтра от режима потока.
+    rho_rel = (features["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
+        (cfg.t_nominal_c + 273.15) / (features["t_c"] + 273.15)
+    )
+    flow_factor = np.maximum(
+        (features["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel, 1e-3
+    )
     features["deltaP_norm_kPa"] = features["delta_p_kpa"] / flow_factor
     features["deltaP_roll_mean_1h"] = (
         features["delta_p_kpa"].rolling(one_hour, min_periods=1).mean()
