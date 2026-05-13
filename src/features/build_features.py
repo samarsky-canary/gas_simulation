@@ -113,11 +113,13 @@ FEATURE_DESCRIPTIONS = [
 
 
 def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
+    """Строит табличные признаки для rule-интерпретации и baseline ML-моделей."""
     features = df.copy()
     one_hour = _window_steps(cfg, hours=1)
     six_hours = _window_steps(cfg, hours=6)
     dt_h = cfg.step_minutes / 60.0
 
+    # Нормировка на квадрат расхода отделяет рост сопротивления фильтра от режима потока.
     flow_factor = np.maximum((features["q_m3h"] / cfg.q_nominal_m3h) ** 2, 1e-3)
     features["deltaP_norm_kPa"] = features["delta_p_kpa"] / flow_factor
     features["deltaP_roll_mean_1h"] = (
@@ -131,6 +133,7 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     ).apply(lambda values: _slope(values, dt_h), raw=True)
     features["Q_roll_mean_1h"] = features["q_m3h"].rolling(one_hour, min_periods=1).mean()
 
+    # Признак качества показывает, насколько надежны данные в текущем часовом окне.
     missing_row = (
         features[["p_in_mpa", "p_out_mpa", "delta_p_kpa", "q_m3h", "t_c"]]
         .isna()
@@ -140,6 +143,7 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     )
     features["missing_rate_1h"] = missing_row.rolling(one_hour, min_periods=1).mean()
 
+    # Накопленное время выше warning сбрасывается после обслуживания фильтра.
     above_warn = features["delta_p_kpa"].ge(cfg.dp_warn_kpa).fillna(False)
     segment = features["maintenance_event"].fillna(False).astype(bool).cumsum()
     features["time_above_warn"] = above_warn.groupby(segment).cumsum() * dt_h
@@ -148,6 +152,7 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_features(cfg: ScenarioConfig, features: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
+    """Экспортирует признаки в CSV/Parquet, русскую CSV-версию и описание формул."""
     paths = {
         "features_csv": output_dir / "features.csv",
         "features_parquet": output_dir / "features.parquet",
@@ -162,10 +167,12 @@ def export_features(cfg: ScenarioConfig, features: pd.DataFrame, output_dir: Pat
 
 
 def _window_steps(cfg: ScenarioConfig, hours: int) -> int:
+    """Переводит длительность окна в часах в количество строк временного ряда."""
     return max(int(hours * 60 / cfg.step_minutes), 1)
 
 
 def _slope(values: np.ndarray, dt_h: float) -> float:
+    """Считает наклон линейного тренда по окну, игнорируя пропуски."""
     mask = ~np.isnan(values)
     if mask.sum() < 2:
         return np.nan
@@ -179,6 +186,7 @@ def _slope(values: np.ndarray, dt_h: float) -> float:
 
 
 def _to_russian_csv(features: pd.DataFrame, path: Path) -> None:
+    """Создает русифицированный CSV с признаками для просмотра и отчета."""
     localized = features.copy()
     for column, value_map in RU_VALUE_MAPS.items():
         if column in localized.columns:
@@ -188,6 +196,7 @@ def _to_russian_csv(features: pd.DataFrame, path: Path) -> None:
 
 
 def _feature_description(cfg: ScenarioConfig) -> str:
+    """Генерирует markdown-описание признаков, их формул и назначения."""
     lines = [
         "# Описание feature builder",
         "",

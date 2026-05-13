@@ -7,6 +7,7 @@ from src.simulator.config import ScenarioConfig
 
 
 def simulate_degradation(cfg: ScenarioConfig, profile: pd.DataFrame) -> pd.DataFrame:
+    """Считает скрытый уровень засорения фильтра и события обслуживания."""
     q = profile["q_true_m3h"].to_numpy()
     n = len(q)
     dt_h = cfg.step_minutes / 60.0
@@ -21,10 +22,12 @@ def simulate_degradation(cfg: ScenarioConfig, profile: pd.DataFrame) -> pd.DataF
 
     for i in range(1, n):
         if maintenance_idx is not None and i == maintenance_idx:
+            # Обслуживание сбрасывает засорение до заданного остаточного уровня.
             clog[i] = min(cfg.c_reset, clog[i - 1])
             maintenance[i] = True
             continue
         load = (max(q[i - 1], 0.0) / cfg.q_nominal_m3h) ** cfg.gamma_load
+        # Засорение растет быстрее при большем расходе, но ограничено диапазоном [0, 1].
         clog[i] = np.clip(clog[i - 1] + cfg.k_s_per_hour * load * dt_h, 0.0, 1.0)
 
     return pd.DataFrame({"clog_level": clog, "maintenance_event": maintenance})

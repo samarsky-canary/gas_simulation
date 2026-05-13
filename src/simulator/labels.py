@@ -7,6 +7,7 @@ from src.simulator.config import ScenarioConfig
 
 
 def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
+    """Добавляет диагностические состояния, тревоги, RUL и простые rule-признаки."""
     out = df.copy()
     true_dp = out["delta_p_true_kpa"].to_numpy()
     obs_dp = out["delta_p_kpa"].to_numpy()
@@ -26,6 +27,7 @@ def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _states(values: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
+    """Классифицирует перепад давления в normal/warning/critical/unknown."""
     return np.where(
         np.isnan(values),
         "unknown",
@@ -34,6 +36,7 @@ def _states(values: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
 
 
 def _rul_oracle(delta_p_true: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
+    """Считает истинный RUL как время до ближайшего будущего достижения критического порога."""
     n = len(delta_p_true)
     dt_h = cfg.step_minutes / 60.0
     result = np.full(n, np.nan)
@@ -47,6 +50,7 @@ def _rul_oracle(delta_p_true: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
 
 
 def _rul_analytic(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
+    """Оценивает RUL аналитически через текущий уровень засорения и локальную скорость деградации."""
     q = df["q_true_m3h"].to_numpy()
     t_c = df["t_true_c"].to_numpy()
     clog = df["clog_level"].to_numpy()

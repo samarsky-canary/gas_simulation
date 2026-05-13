@@ -80,7 +80,9 @@ RU_VALUES = {
 
 
 def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
+    """Применяет пороговые правила состояния и рекомендации обслуживания."""
     result = df.copy()
+    # Состояние определяется только по наблюдаемому перепаду давления.
     result["rule_state"] = np.select(
         [
             result["delta_p_kpa"].isna(),
@@ -94,6 +96,7 @@ def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     result.loc[result["quality_code"].eq("missing"), "rule_state"] = "unknown"
     result["rule_alarm_flag"] = result["rule_state"].isin(["warning", "critical"])
 
+    # Рекомендация сначала строится по RUL, затем усиливается критическим состоянием или плохими данными.
     recommendation = np.full(len(result), "continue_monitoring", dtype=object)
     rul = result["rul_analytic_h"]
     recommendation[rul < cfg.planned_maintenance_rul_h] = "planned_maintenance"
@@ -109,6 +112,7 @@ def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
 def export_rule_baseline(
     cfg: ScenarioConfig, baseline: pd.DataFrame, output_dir: Path
 ) -> dict[str, Path]:
+    """Сохраняет результат rule-based baseline и описание примененных правил."""
     paths = {
         "rule_baseline_csv": output_dir / "rule_baseline.csv",
         "rule_baseline_parquet": output_dir / "rule_baseline.parquet",
@@ -123,6 +127,7 @@ def export_rule_baseline(
 
 
 def _reason(cfg: ScenarioConfig, row: pd.Series) -> str:
+    """Формирует текстовое объяснение, почему правило выдало состояние и рекомендацию."""
     if row["rule_state"] == "unknown":
         return "quality_code=missing or delta_p_kpa is NaN"
     if row["rule_state"] == "normal":
@@ -146,6 +151,7 @@ def _reason(cfg: ScenarioConfig, row: pd.Series) -> str:
 
 
 def _to_russian_csv(baseline: pd.DataFrame, path: Path) -> None:
+    """Создает русифицированную таблицу результата rule-based baseline."""
     localized = baseline.copy()
     for column, mapping in RU_VALUES.items():
         if column in localized.columns:
@@ -155,6 +161,7 @@ def _to_russian_csv(baseline: pd.DataFrame, path: Path) -> None:
 
 
 def _description(cfg: ScenarioConfig) -> str:
+    """Генерирует markdown-описание пороговой логики baseline-модели."""
     return "\n".join(
         [
             "# Rule-based baseline",

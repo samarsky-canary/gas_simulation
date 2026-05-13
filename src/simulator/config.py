@@ -21,6 +21,8 @@ ScenarioName = Literal[
 
 
 class ScenarioConfig(BaseModel):
+    """Единая схема параметров симулятора и порогов диагностики."""
+
     model_config = ConfigDict(extra="forbid")
 
     filter_id: str = "F-001"
@@ -55,6 +57,8 @@ class ScenarioConfig(BaseModel):
     dp_crit_kpa: float = Field(default=10.0, gt=0)
     planned_maintenance_rul_h: float = Field(default=72.0, gt=0)
     urgent_maintenance_rul_h: float = Field(default=12.0, gt=0)
+    lstm_window_hours: float = Field(default=24.0, gt=0)
+    lstm_stride_steps: int = Field(default=1, gt=0)
     c0: float = Field(default=0.05, ge=0, le=1)
     k_s_per_hour: float = Field(default=4e-4, ge=0)
     alpha_flow: float = Field(default=2.0, gt=0)
@@ -84,6 +88,7 @@ class ScenarioConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ScenarioConfig":
+        """Проверяет взаимосвязанные диапазоны, которые нельзя проверить простым Field."""
         if self.q_min_m3h >= self.q_max_m3h:
             raise ValueError("q_min_m3h must be lower than q_max_m3h")
         if self.dp_warn_kpa >= self.dp_crit_kpa:
@@ -110,6 +115,7 @@ SCENARIO_OVERRIDES: dict[str, dict[str, Any]] = {
 
 
 def load_config(path: Path | str) -> ScenarioConfig:
+    """Загружает YAML-конфиг, применяет пресет сценария и возвращает валидированный объект."""
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}

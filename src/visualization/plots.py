@@ -19,6 +19,7 @@ STATE_LABELS = ["неизвестно", "норма", "предупрежден�
 
 
 def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
+    """Строит набор PNG-графиков для визуальной проверки синтетического прогона."""
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
     data = df.sort_values("timestamp").copy()
@@ -53,6 +54,7 @@ def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict
 
 
 def _plot_q(df: pd.DataFrame, path: Path) -> None:
+    """Рисует расход газа во времени."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["q_m3h"], color="#1f77b4", linewidth=0.8)
     _style_time_axis(ax, "Расход газа Q(t)", "Расход, м3/ч")
@@ -60,6 +62,7 @@ def _plot_q(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_pressure(df: pd.DataFrame, path: Path) -> None:
+    """Рисует входное и выходное давление на одном графике."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["p_in_mpa"], label="P_in", color="#1f77b4", linewidth=0.8)
     ax.plot(df["timestamp"], df["p_out_mpa"], label="P_out", color="#ff7f0e", linewidth=0.8)
@@ -69,6 +72,7 @@ def _plot_pressure(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_delta_p(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
+    """Рисует перепад давления, пороги warning/critical и сглаженный тренд."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["delta_p_kpa"], label="deltaP наблюдаемый", color="#d62728", linewidth=0.7)
     ax.plot(
@@ -86,6 +90,7 @@ def _plot_delta_p(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_clog(df: pd.DataFrame, path: Path) -> None:
+    """Рисует скрытый уровень засорения, который недоступен реальному датчику."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["clog_level"], color="#2ca02c", linewidth=1.0)
     ax.set_ylim(-0.02, 1.02)
@@ -94,6 +99,7 @@ def _plot_clog(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_rul(df: pd.DataFrame, path: Path) -> None:
+    """Сравнивает oracle-RUL и аналитическую оценку остаточного ресурса."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["rul_oracle_h"], label="RUL oracle", color="#9467bd", linewidth=0.9)
     ax.plot(df["timestamp"], df["rul_analytic_h"], label="RUL аналитический", color="#8c564b", linewidth=0.9, alpha=0.85)
@@ -103,6 +109,7 @@ def _plot_rul(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_state(df: pd.DataFrame, path: Path) -> None:
+    """Показывает дискретное наблюдаемое состояние фильтра во времени."""
     fig, ax = plt.subplots(figsize=(14, 4))
     codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
     ax.step(df["timestamp"], codes, where="post", color="#111111", linewidth=1.0)
@@ -113,6 +120,7 @@ def _plot_state(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_delta_p_norm(df: pd.DataFrame, path: Path) -> None:
+    """Рисует перепад, нормированный на расход, как более чистый индикатор засорения."""
     fig, ax = plt.subplots(figsize=(14, 5))
     ax.plot(df["timestamp"], df["delta_p_norm_q2"], color="#17becf", linewidth=0.7)
     _style_time_axis(ax, "Нормированный перепад deltaP_norm(t)", "Нормированный перепад")
@@ -120,6 +128,7 @@ def _plot_delta_p_norm(df: pd.DataFrame, path: Path) -> None:
 
 
 def _plot_delta_p_vs_clog(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
+    """Сопоставляет засорение с перепадом давления и его нормированной версией."""
     fig, ax1 = plt.subplots(figsize=(14, 6))
     ax1.plot(df["timestamp"], df["clog_level"], color="#2ca02c", linewidth=1.2, label="clog_level")
     ax1.set_ylabel("Засорение, доля")
@@ -153,6 +162,7 @@ def _plot_delta_p_vs_clog(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> 
 
 
 def _plot_dashboard(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
+    """Собирает ключевые временные ряды на один обзорный лист."""
     fig, axes = plt.subplots(7, 1, figsize=(16, 20), sharex=True)
     axes[0].plot(df["timestamp"], df["q_m3h"], color="#1f77b4", linewidth=0.7)
     axes[0].set_ylabel("Q, м3/ч")
@@ -194,11 +204,13 @@ def _plot_dashboard(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
 
 
 def _rolling(df: pd.DataFrame, column: str, cfg: ScenarioConfig, hours: int) -> pd.Series:
+    """Считает скользящее среднее по заданному числу часов."""
     window = max(int(hours * 60 / cfg.step_minutes), 1)
     return df[column].rolling(window, min_periods=max(window // 4, 1)).mean()
 
 
 def _style_time_axis(ax: plt.Axes, title: str, ylabel: str) -> None:
+    """Применяет общий стиль к графикам временных рядов."""
     ax.set_title(title)
     ax.set_xlabel("Время")
     ax.set_ylabel(ylabel)
@@ -208,12 +220,14 @@ def _style_time_axis(ax: plt.Axes, title: str, ylabel: str) -> None:
 
 
 def _save(fig: plt.Figure, path: Path) -> None:
+    """Сохраняет фигуру в PNG и закрывает ее, чтобы не держать память."""
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
 
 def _description() -> str:
+    """Создает markdown-описание назначений всех графиков."""
     return "\n".join(
         [
             "# Описание графиков",
@@ -235,6 +249,7 @@ def _description() -> str:
 
 
 def _diagnostics(cfg: ScenarioConfig, df: pd.DataFrame) -> str:
+    """Считает корреляции, которые показывают согласованность deltaP с засорением."""
     data = df[["clog_level", "delta_p_kpa", "delta_p_norm_q2"]].copy()
     data["delta_p_ma_24h"] = _rolling(df, "delta_p_kpa", cfg, hours=24)
     data["delta_p_norm_ma_24h"] = _rolling(df, "delta_p_norm_q2", cfg, hours=24)

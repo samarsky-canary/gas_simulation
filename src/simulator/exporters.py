@@ -49,6 +49,41 @@ TRUTH_COLUMNS = [
     "is_censored",
 ]
 
+CANONICAL_DATASET_COLUMNS = [
+    "timestamp",
+    "filter_id",
+    "scenario",
+    "P_in_MPa",
+    "P_out_MPa",
+    "deltaP_kPa",
+    "Q_m3h",
+    "T_C",
+    "rho_rel",
+    "clog_level",
+    "deltaP_norm_kPa",
+    "state",
+    "RUL_oracle_h",
+    "RUL_analytic_h",
+    "quality_code",
+    "fault_flags",
+]
+
+LSTM_INPUT_COLUMNS = [
+    "P_in_MPa",
+    "P_out_MPa",
+    "deltaP_kPa",
+    "Q_m3h",
+    "T_C",
+    "rho_rel",
+    "deltaP_norm_kPa",
+]
+
+LSTM_FORBIDDEN_INPUT_COLUMNS = [
+    "clog_level",
+    "RUL_oracle_h",
+    "state",
+]
+
 RU_COLUMN_NAMES = {
     "run_id": "идентификатор_прогона",
     "timestamp": "время",
@@ -154,8 +189,10 @@ OPERATION_DESCRIPTIONS = [
 def export_run(
     cfg: ScenarioConfig, df: pd.DataFrame, report: QCReport, output_dir: Path
 ) -> dict[str, Path]:
+    """Сохраняет наблюдаемые данные, истинные метки, debug-набор и метаданные прогона."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # raw используется как вход онлайн-контура, truth - как скрытая истина для обучения и оценки.
     raw = df[OBSERVED_COLUMNS]
     truth = df[TRUTH_COLUMNS]
     paths = {
@@ -170,8 +207,12 @@ def export_run(
         "wide_debug_ru_csv": output_dir / "wide_debug_ru.csv",
         "operations_description": output_dir / "operations_description.md",
         "metadata": output_dir / "metadata.json",
+        "dataset_csv": output_dir / "dataset.csv",
+        "dataset_parquet": output_dir / "dataset.parquet",
+        "dataset_schema": output_dir / "dataset_schema.md",
     }
 
+    dataset = _canonical_dataset(cfg, df)
     raw.to_csv(paths["raw_observed_csv"], index=False, encoding="utf-8")
     raw.to_parquet(paths["raw_observed_parquet"], index=False)
     truth.to_csv(paths["truth_labels_csv"], index=False, encoding="utf-8")
@@ -182,6 +223,9 @@ def export_run(
     _to_russian_csv(truth, paths["truth_labels_ru_csv"])
     _to_russian_csv(df, paths["wide_debug_ru_csv"])
     paths["operations_description"].write_text(_operations_markdown(), encoding="utf-8")
+    dataset.to_csv(paths["dataset_csv"], index=False, encoding="utf-8")
+    dataset.to_parquet(paths["dataset_parquet"], index=False)
+    paths["dataset_schema"].write_text(_dataset_schema_markdown(), encoding="utf-8")
 
     metadata = {
         "schema_version": cfg.schema_version,
@@ -189,6 +233,9 @@ def export_run(
         "timezone_name": cfg.timezone_name,
         "rows": len(df),
         "columns": list(df.columns),
+        "canonical_dataset_columns": CANONICAL_DATASET_COLUMNS,
+        "lstm_input_columns": LSTM_INPUT_COLUMNS,
+        "lstm_forbidden_input_columns": LSTM_FORBIDDEN_INPUT_COLUMNS,
         "russian_column_names": RU_COLUMN_NAMES,
         "operation_descriptions": OPERATION_DESCRIPTIONS,
         "config": cfg.model_dump(mode="json"),
@@ -210,7 +257,40 @@ def export_run(
     return paths
 
 
+def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
+    """Собирает зафиксированный датасет с внешними именами колонок для CSV/Parquet."""
+    # rho_rel и deltaP_norm считаются из наблюдаемых каналов, поэтому их можно подавать на вход модели.
+    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
+        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
+    )
+    delta_p_norm = df["delta_p_kpa"] / ((df["q_m3h"] / cfg.q_nominal_m3h) ** 2).clip(
+        lower=1e-3
+    )
+    dataset = pd.DataFrame(
+        {
+            "timestamp": df["timestamp"],
+            "filter_id": df["filter_id"],
+            "scenario": df["scenario_id"],
+            "P_in_MPa": df["p_in_mpa"],
+            "P_out_MPa": df["p_out_mpa"],
+            "deltaP_kPa": df["delta_p_kpa"],
+            "Q_m3h": df["q_m3h"],
+            "T_C": df["t_c"],
+            "rho_rel": rho_rel,
+            "clog_level": df["clog_level"],
+            "deltaP_norm_kPa": delta_p_norm,
+            "state": df["state_obs"],
+            "RUL_oracle_h": df["rul_oracle_h"],
+            "RUL_analytic_h": df["rul_analytic_h"],
+            "quality_code": df["quality_code"],
+            "fault_flags": df["fault_flags"],
+        }
+    )
+    return dataset[CANONICAL_DATASET_COLUMNS]
+
+
 def _to_russian_csv(df: pd.DataFrame, path: Path) -> None:
+    """Создает CSV для чтения человеком: русские заголовки и русские значения категорий."""
     localized = df.copy()
     for column, value_map in RU_VALUE_MAPS.items():
         if column in localized.columns:
@@ -220,6 +300,7 @@ def _to_russian_csv(df: pd.DataFrame, path: Path) -> None:
 
 
 def _operations_markdown() -> str:
+    """Формирует текстовое описание операций симулятора для отчетных артефактов."""
     lines = ["# Описание операций симулятора", ""]
     for item in OPERATION_DESCRIPTIONS:
         lines.append(f"## {item['step']}")
@@ -239,6 +320,57 @@ def _operations_markdown() -> str:
     return "\n".join(lines)
 
 
+def _dataset_schema_markdown() -> str:
+    """Формирует документ, который фиксирует контракт датасета и LSTM-входы."""
+    rows = [
+        ("timestamp", "datetime", "-", "Временная метка наблюдения."),
+        ("filter_id", "string", "-", "Идентификатор фильтра."),
+        ("scenario", "string", "-", "Имя сценария генерации."),
+        ("P_in_MPa", "float", "МПа", "Наблюдаемое входное давление."),
+        ("P_out_MPa", "float", "МПа", "Наблюдаемое выходное давление."),
+        ("deltaP_kPa", "float", "кПа", "Наблюдаемый перепад давления."),
+        ("Q_m3h", "float", "м3/ч", "Наблюдаемый расход газа."),
+        ("T_C", "float", "°C", "Наблюдаемая температура газа."),
+        ("rho_rel", "float", "отн. ед.", "Относительная плотность, рассчитанная из наблюдаемых P и T."),
+        ("clog_level", "float", "0..1", "Скрытый уровень засорения симулятора."),
+        ("deltaP_norm_kPa", "float", "кПа", "Перепад, нормированный на квадрат расхода."),
+        ("state", "category", "-", "Состояние по наблюдаемому перепаду: normal/warning/critical/unknown."),
+        ("RUL_oracle_h", "float", "ч", "Истинный RUL до критического порога, доступен только в синтетике."),
+        ("RUL_analytic_h", "float", "ч", "Аналитическая оценка остаточного ресурса."),
+        ("quality_code", "category", "-", "Код качества строки."),
+        ("fault_flags", "string", "-", "Детальные флаги сбоев датчиков."),
+    ]
+    lines = [
+        "# Зафиксированный формат датасета",
+        "",
+        "Основной контракт для обмена и последующего обучения фиксируется файлами `dataset.csv` и `dataset.parquet`.",
+        "",
+        "## Колонки",
+        "",
+        "| Колонка | Тип | Единицы | Описание |",
+        "|---|---|---:|---|",
+    ]
+    for name, dtype, unit, description in rows:
+        lines.append(f"| `{name}` | `{dtype}` | {unit} | {description} |")
+    lines.extend(
+        [
+            "",
+            "## Можно подавать на вход LSTM",
+            "",
+            *[f"- `{column}`" for column in LSTM_INPUT_COLUMNS],
+            "",
+            "## Нельзя подавать на вход LSTM",
+            "",
+            *[f"- `{column}`" for column in LSTM_FORBIDDEN_INPUT_COLUMNS],
+            "",
+            "`clog_level`, `RUL_oracle_h` и `state` являются скрытыми/целевыми полями симулятора. Их можно использовать как target или для оценки качества, но нельзя включать в признаки входной последовательности.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _config_hash(cfg: ScenarioConfig) -> str:
+    """Считает хэш конфигурации, чтобы можно было проверить воспроизводимость набора."""
     payload = json.dumps(cfg.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

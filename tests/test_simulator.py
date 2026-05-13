@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from src.simulator.config import ScenarioConfig
+from src.simulator.exporters import CANONICAL_DATASET_COLUMNS, export_run
 from src.simulator.runner import run_scenario
 
 
@@ -41,3 +43,15 @@ def test_maintenance_reset_reduces_clog_level() -> None:
     event_idx = int(df.index[df["maintenance_event"]][0])
 
     assert df.loc[event_idx, "clog_level"] < df.loc[event_idx - 1, "clog_level"]
+
+
+def test_export_run_writes_canonical_dataset_schema(tmp_path) -> None:
+    cfg = ScenarioConfig(duration_days=1, step_minutes=30, p_missing=0, p_spike=0, p_stuck=0)
+    df, report = run_scenario(cfg)
+
+    paths = export_run(cfg, df, report, tmp_path)
+    dataset = pd.read_parquet(paths["dataset_parquet"])
+
+    assert list(dataset.columns) == CANONICAL_DATASET_COLUMNS
+    assert paths["dataset_csv"].exists()
+    assert paths["dataset_schema"].exists()

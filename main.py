@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
 from src.features import build_features, export_features
+from src.lstm import build_lstm_windows, export_lstm_windows
+from src.ml import train_and_export_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
 from src.simulator.config import load_config
 from src.simulator.exporters import export_run
@@ -22,6 +26,9 @@ OUTPUT_LABELS = {
     "wide_debug_ru_csv": "полный отладочный набор CSV на русском",
     "operations_description": "описание операций",
     "metadata": "метаданные",
+    "dataset_csv": "зафиксированный датасет CSV",
+    "dataset_parquet": "зафиксированный датасет Parquet",
+    "dataset_schema": "описание схемы датасета",
     "features_csv": "признаки CSV",
     "features_parquet": "признаки Parquet",
     "features_ru_csv": "признаки CSV на русском",
@@ -30,18 +37,33 @@ OUTPUT_LABELS = {
     "rule_baseline_parquet": "rule-based baseline Parquet",
     "rule_baseline_ru_csv": "rule-based baseline CSV на русском",
     "rule_baseline_description": "описание rule-based baseline",
+    "ml_predictions_csv": "ML baseline предсказания CSV",
+    "ml_predictions_parquet": "ML baseline предсказания Parquet",
+    "ml_metrics_json": "ML baseline метрики JSON",
+    "ml_report": "ML baseline отчет",
+    "rul_model": "модель RandomForest для RUL",
+    "state_model": "модель RandomForest для state",
+    "lstm_rul_npz": "LSTM окна для RUL",
+    "lstm_state_npz": "LSTM окна для state",
+    "lstm_metadata": "метаданные LSTM-окон",
+    "lstm_description": "описание LSTM-окон",
 }
 
 
 def main() -> None:
+    """Запускает полный конвейер: симуляция, экспорт, признаки, правила и графики."""
     cfg = load_config(Path("configs/base.yaml"))
     df, report = run_scenario(cfg)
     output_dir = Path("outputs") / cfg.scenario_name
     paths = export_run(cfg, df, report, output_dir)
+    dataset = pd.read_parquet(paths["dataset_parquet"])
     features = build_features(cfg, df)
     feature_paths = export_features(cfg, features, output_dir)
     rule_baseline = apply_rule_baseline(cfg, df)
     rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir)
+    ml_paths = train_and_export_ml_baseline(dataset, output_dir, features)
+    lstm_windows = build_lstm_windows(cfg, dataset)
+    lstm_paths = export_lstm_windows(cfg, lstm_windows, output_dir)
     plot_paths = build_plots(cfg, df, output_dir)
 
     print(f"Сгенерировано строк: {len(df)}")
@@ -57,6 +79,14 @@ def main() -> None:
         print(f"- {label}: {path}")
     print("Создан rule-based baseline:")
     for name, path in rule_paths.items():
+        label = OUTPUT_LABELS.get(name, name)
+        print(f"- {label}: {path}")
+    print("Обучен ML baseline:")
+    for name, path in ml_paths.items():
+        label = OUTPUT_LABELS.get(name, name)
+        print(f"- {label}: {path}")
+    print("Созданы LSTM окна:")
+    for name, path in lstm_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Созданные графики:")

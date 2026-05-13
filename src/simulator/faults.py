@@ -15,6 +15,7 @@ def apply_sensor_model(
     physics: pd.DataFrame,
     rng: np.random.Generator,
 ) -> pd.DataFrame:
+    """Преобразует истинные физические каналы в наблюдаемые измерения с шумом датчиков."""
     n = len(profile)
     drift = np.arange(n) * cfg.step_minutes / (60 * 24) * cfg.bias_drift_mpa_per_day
 
@@ -28,11 +29,13 @@ def apply_sensor_model(
     t_c = profile["t_true_c"].to_numpy() + rng.normal(0, cfg.sigma_t_abs_c, n)
 
     if cfg.use_dp_sensor:
+        # Если включен DP-датчик, перепад моделируется отдельным измерительным каналом.
         delta_p = np.maximum(
             0.0, physics["delta_p_true_kpa"].to_numpy() + rng.normal(0, cfg.sigma_dp_kpa, n)
         )
         source = "sensor"
     else:
+        # Иначе перепад вычисляется как разность наблюдаемых абсолютных давлений.
         delta_p = np.maximum(0.0, 1000.0 * (p_in - p_out))
         source = "calc"
 
@@ -52,17 +55,20 @@ def apply_sensor_model(
 def inject_faults(
     cfg: ScenarioConfig, observed: pd.DataFrame, rng: np.random.Generator
 ) -> pd.DataFrame:
+    """Добавляет пропуски, выбросы и залипания датчиков в наблюдаемую телеметрию."""
     df = observed.copy()
     n = len(df)
     flags: list[set[str]] = [set() for _ in range(n)]
 
     for channel in OBSERVED_CHANNELS:
+        # Пропуск имитирует потерю телеметрии по конкретному каналу.
         missing = rng.random(n) < cfg.p_missing
         if missing.any():
             df.loc[missing, channel] = np.nan
             for i in np.flatnonzero(missing):
                 flags[i].add(f"missing:{channel}")
 
+        # Выброс имитирует короткий нехарактерный скачок измерения.
         spikes = rng.random(n) < cfg.p_spike
         if spikes.any():
             scale = _spike_scale(channel, cfg)
@@ -75,6 +81,7 @@ def inject_faults(
 
         starts = np.flatnonzero(rng.random(n) < cfg.p_stuck)
         for start in starts:
+            # Залипание удерживает значение датчика постоянным на случайном интервале.
             if start == 0 or pd.isna(df.at[start - 1, channel]):
                 continue
             length = int(rng.integers(cfg.stuck_min_steps, cfg.stuck_max_steps + 1))
@@ -99,6 +106,7 @@ def inject_faults(
 
 
 def _spike_scale(channel: str, cfg: ScenarioConfig) -> float:
+    """Возвращает характерный масштаб выброса для каждого типа датчика."""
     if channel in {"p_in_mpa", "p_out_mpa"}:
         return 0.008
     if channel == "q_m3h":

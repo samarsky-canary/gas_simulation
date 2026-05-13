@@ -7,6 +7,7 @@ from src.simulator.config import ScenarioConfig
 
 
 def _ar1(n: int, rho: float, sigma: float, rng: np.random.Generator) -> np.ndarray:
+    """Генерирует коррелированный шум AR(1), чтобы режимы менялись плавно, а не белым шумом."""
     values = np.zeros(n)
     innovations = rng.normal(0.0, sigma, n)
     for i in range(1, n):
@@ -17,11 +18,13 @@ def _ar1(n: int, rho: float, sigma: float, rng: np.random.Generator) -> np.ndarr
 def generate_profiles(
     cfg: ScenarioConfig, idx: pd.DatetimeIndex, rng: np.random.Generator
 ) -> pd.DataFrame:
+    """Генерирует истинные профили расхода, входного давления и температуры."""
     n = len(idx)
     k = np.arange(n)
     steps_per_day = max(int(24 * 60 / cfg.step_minutes), 1)
     steps_per_week = max(7 * steps_per_day, 1)
 
+    # Базовый расход задается суточной и недельной сезонностью.
     q_base = cfg.q_nominal_m3h * (
         1
         + cfg.a_q * np.sin(2 * np.pi * k / steps_per_day)
@@ -30,6 +33,7 @@ def generate_profiles(
     q = q_base + _ar1(n, cfg.q_ar_rho, cfg.q_process_std_m3h, rng)
 
     if cfg.scenario_name == "flow_spikes":
+        # В сценарии flow_spikes добавляем краткие всплески расхода как режимные возмущения.
         starts = rng.choice(n, size=max(n // (steps_per_day * 5), 1), replace=False)
         for start in starts:
             width = int(rng.integers(3, 18))

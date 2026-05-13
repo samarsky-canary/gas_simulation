@@ -26,6 +26,8 @@ dp_warn_kpa: 5.0
 dp_crit_kpa: 10.0
 planned_maintenance_rul_h: 72
 urgent_maintenance_rul_h: 12
+lstm_window_hours: 24
+lstm_stride_steps: 1
 
 c0: 0.05
 k_s_per_hour: 0.0004

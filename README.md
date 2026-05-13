@@ -10,6 +10,8 @@
 
 Результаты пишутся в `outputs/<scenario_name>/`:
 
+- `dataset.csv` / `dataset.parquet` - зафиксированный основной датасет с финальным контрактом колонок.
+- `dataset_schema.md` - описание колонок, разрешенных входов LSTM и запрещенных скрытых/целевых полей.
 - `raw_observed.csv` / `raw_observed.parquet` - наблюдаемая телеметрия и QC.
 - `raw_observed_ru.csv` - наблюдаемая телеметрия с русскими заголовками и русифицированными состояниями.
 - `truth_labels.csv` / `truth_labels.parquet` - скрытые состояния и целевые метки.
@@ -25,8 +27,35 @@
 - `rule_baseline.csv` / `rule_baseline.parquet` - результат регламентно-логической baseline-модели.
 - `rule_baseline_ru.csv` - русифицированный результат rule-based baseline.
 - `rule_baseline_description.md` - описание правил состояния и рекомендаций.
+- `ml_baseline/` - модели RandomForest, предсказания и метрики классического ML-baseline.
+- `lstm_windows/` - NumPy-окна временного ряда для RUL и state-задач.
 
 Англоязычные CSV/Parquet оставлены как стабильная машинная схема для кода, ML и последующей обработки. Русские CSV предназначены для просмотра, отчета и ручной проверки.
+
+## Формат Датасета
+
+Основной фиксированный формат находится в `dataset.csv` и `dataset.parquet`:
+
+- `timestamp`
+- `filter_id`
+- `scenario`
+- `P_in_MPa`
+- `P_out_MPa`
+- `deltaP_kPa`
+- `Q_m3h`
+- `T_C`
+- `rho_rel`
+- `clog_level`
+- `deltaP_norm_kPa`
+- `state`
+- `RUL_oracle_h`
+- `RUL_analytic_h`
+- `quality_code`
+- `fault_flags`
+
+Для входа LSTM можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa`.
+
+Нельзя подавать на вход LSTM: `clog_level`, `RUL_oracle_h`, `state`. Это скрытые или целевые поля симулятора.
 
 ## Операции симулятора
 
@@ -41,8 +70,10 @@
 9. Расчет диагностических состояний, тревоги и RUL.
 10. Расчет признаков для baseline-моделей и интерпретации правил.
 11. Расчет rule-based baseline: состояние фильтра и рекомендация обслуживания.
-12. Экспорт CSV, Parquet, metadata и русифицированных отчетных файлов.
-13. Построение графиков по расходу, давлениям, перепаду, засорению, RUL, состоянию и нормированному перепаду.
+12. Обучение классического ML-baseline: RandomForestRegressor для RUL и RandomForestClassifier для state.
+13. Преобразование временного ряда в LSTM-окна.
+14. Экспорт CSV, Parquet, metadata и русифицированных отчетных файлов.
+15. Построение графиков по расходу, давлениям, перепаду, засорению, RUL, состоянию и нормированному перепаду.
 
 ## Признаки
 
@@ -73,6 +104,54 @@ Feature builder создает минимальный набор признак�
 - `rul_analytic_h < 12` -> `urgent_maintenance`.
 - `rule_state = critical` повышает рекомендацию до `urgent_maintenance`.
 - `rule_state = unknown` -> `inspect_sensor_data`.
+
+## ML Baseline
+
+Перед LSTM обучается классический baseline:
+
+- `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
+- `RandomForestClassifier` классифицирует `state`.
+- Split временной: первые 70% строк идут в train, последние 30% в test.
+- Входы: разрешенные наблюдаемые поля плюс инженерные признаки feature builder.
+- Скрытые и целевые поля `clog_level`, `RUL_oracle_h`, `state` не используются как входы.
+
+Артефакты лежат в `outputs/<scenario_name>/ml_baseline/`:
+
+- `random_forest_rul.joblib`
+- `random_forest_state.joblib`
+- `ml_predictions.csv`
+- `ml_predictions.parquet`
+- `ml_metrics.json`
+- `ml_baseline_report.md`
+
+## LSTM Windows
+
+Для подготовки к LSTM создаются окна фиксированной длины:
+
+- Окно входа: `24` часа.
+- Длина окна считается как `24 * 60 / step_minutes`.
+- При `step_minutes = 10` длина окна равна `144` точкам.
+- В текущем базовом конфиге `step_minutes = 5`, поэтому длина окна равна `288` точкам.
+
+Входные признаки:
+
+- `P_in_MPa`
+- `P_out_MPa`
+- `deltaP_kPa`
+- `Q_m3h`
+- `T_C`
+- `rho_rel`
+- `deltaP_norm_kPa`
+
+Target для RUL-задачи: `RUL_oracle_h`.
+Target для второй задачи: `state`.
+
+Артефакты:
+
+- `lstm_windows/lstm_rul_windows.npz` - `X`, `y`, `timestamps`, `feature_names`.
+- `lstm_windows/lstm_state_windows.npz` - `X`, `y`, `timestamps`, `feature_names`, `state_classes`.
+- `lstm_windows/lstm_windows_metadata.json` - формы массивов и параметры окна.
+- `lstm_windows/lstm_windows_description.md` - человекочитаемое описание.
 
 ## Графики
 

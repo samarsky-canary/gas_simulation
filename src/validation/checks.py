@@ -10,6 +10,8 @@ from src.simulator.config import ScenarioConfig
 
 
 class QCReport(BaseModel):
+    """Краткий отчет о качестве и физической корректности прогона."""
+
     rows: int
     rows_with_flags: int
     flag_counts: dict[str, int]
@@ -20,12 +22,14 @@ class QCReport(BaseModel):
 
 
 def validate_run(cfg: ScenarioConfig, df: pd.DataFrame) -> tuple[pd.DataFrame, QCReport]:
+    """Проверяет физические ограничения и назначает quality_code для каждой строки."""
     out = df.copy()
     flags: list[set[str]] = [
         set(str(value).split(";")) if isinstance(value, str) and value else set()
         for value in out["fault_flags"]
     ]
 
+    # Любой пропуск в наблюдаемых каналах делает строку сомнительной для онлайн-диагностики.
     missing_mask = out[["p_in_mpa", "p_out_mpa", "delta_p_kpa", "q_m3h", "t_c"]].isna().any(axis=1)
     for i in np.flatnonzero(missing_mask.to_numpy()):
         flags[i].add("missing")
@@ -67,6 +71,7 @@ def validate_run(cfg: ScenarioConfig, df: pd.DataFrame) -> tuple[pd.DataFrame, Q
 
 
 def _quality_code(flags: set[str]) -> str:
+    """Сворачивает набор детальных флагов в один основной код качества строки."""
     if not flags:
         return "good"
     if "missing" in flags or any(flag.startswith("missing:") for flag in flags):

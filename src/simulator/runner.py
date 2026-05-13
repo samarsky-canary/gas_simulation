@@ -14,7 +14,9 @@ from src.validation.checks import QCReport, validate_run
 
 
 def run_scenario(cfg: ScenarioConfig) -> tuple[pd.DataFrame, QCReport]:
+    """Собирает один полный прогон симулятора от временной сетки до меток и QC."""
     rng = np.random.default_rng(cfg.seed)
+    # Порядок шагов повторяет информационный поток: режимы -> деградация -> физика -> датчики -> качество -> метки.
     idx = make_index(cfg)
     profile = generate_profiles(cfg, idx, rng)
     degradation = simulate_degradation(cfg, profile)
