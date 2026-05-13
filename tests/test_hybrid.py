@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.hybrid import build_hybrid_decisions, export_hybrid_decisions
+from src.hybrid import (
+    build_hybrid_decisions,
+    export_hybrid_decisions,
+    format_console_decision_summary,
+)
 from src.simulator.config import ScenarioConfig
 
 
@@ -79,3 +83,15 @@ def test_export_hybrid_decisions_creates_files(tmp_path) -> None:
     assert "Почему:" in cards
     assert "Что делать:" in cards
     assert '"rule_trace"' in packages
+
+
+def test_format_console_decision_summary_contains_cards() -> None:
+    cfg = ScenarioConfig()
+    decisions = build_hybrid_decisions(cfg, _dataset(), _features(), _ml_predictions())
+
+    summary = format_console_decision_summary(decisions, max_cards=2)
+
+    assert "Краткая сводка гибридных решений" in summary
+    assert "Краткие карточки решений" in summary
+    assert "RUL: ML=" in summary
+    assert "Что делать:" in summary

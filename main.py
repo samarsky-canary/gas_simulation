@@ -5,7 +5,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.features import build_features, export_features
-from src.hybrid import build_hybrid_decisions, export_hybrid_decisions
+from src.hybrid import (
+    build_hybrid_decisions,
+    export_hybrid_decisions,
+    format_console_decision_summary,
+)
 from src.lstm import build_lstm_windows, export_lstm_windows
 from src.ml import train_and_export_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
@@ -106,6 +110,8 @@ def main() -> None:
     print("Созданные графики:")
     for path in plot_paths.values():
         print(f"- {path}")
+    print("")
+    print(format_console_decision_summary(hybrid_decisions))
 
 
 if __name__ == "__main__":

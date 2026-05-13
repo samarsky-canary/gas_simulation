@@ -132,6 +132,31 @@ def export_hybrid_decisions(decisions: pd.DataFrame, output_dir: Path) -> dict[s
     return paths
 
 
+def format_console_decision_summary(decisions: pd.DataFrame, max_cards: int = 3) -> str:
+    """Формирует краткий консольный отчет по гибридным решениям и карточкам."""
+    if decisions.empty:
+        return "Краткая сводка гибридных решений: нет данных."
+
+    action_counts = decisions["action"].value_counts().to_dict()
+    source_counts = decisions["rul_source"].value_counts().to_dict()
+    confidence_mean = decisions["confidence_total"].mean()
+    confidence_min = decisions["confidence_total"].min()
+
+    lines = [
+        "Краткая сводка гибридных решений:",
+        f"- Всего временных точек: {len(decisions)}",
+        f"- Действия: {_format_counts(action_counts)}",
+        f"- Источники RUL: {_format_counts(source_counts)}",
+        f"- Confidence total: среднее={confidence_mean:.3f}, минимум={confidence_min:.3f}",
+        "",
+        "Краткие карточки решений:",
+    ]
+    for _, row in _sample_card_rows(decisions).head(max_cards).iterrows():
+        package = _decision_package(row)
+        lines.extend(_console_card_lines(package))
+    return "\n".join(lines)
+
+
 def _prepare_inputs(
     dataset: pd.DataFrame, features: pd.DataFrame, ml_predictions: pd.DataFrame
 ) -> pd.DataFrame:
@@ -517,6 +542,26 @@ def _sample_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
     return decisions.loc[unique_indices]
 
 
+def _console_card_lines(package: dict[str, object]) -> list[str]:
+    """Формирует компактную карточку решения для вывода в консоль."""
+    quality = package["quality"]
+    rul = package["rul"]
+    confidence = package["confidence"]
+    decision = package["decision"]
+    rule_trace = package["rule_trace"]
+    return [
+        "",
+        f"- Фильтр {package['filter_id']} | {package['timestamp']}",
+        f"  Состояние: {str(package['state']).upper()}, качество: {str(quality['quality_code']).upper()}, флаги: {quality['fault_flags'] or 'нет'}",
+        f"  RUL: ML={_fmt_optional(rul['ml_baseline_h'])} ч, analytic={_fmt_optional(rul['analytic_h'])} ч, fused={_fmt_optional(rul['fused_h'])} ч, источник={rul['source']}",
+        f"  Confidence total: {_fmt_optional(confidence['total'])}",
+        f"  Действие: {decision['action']}, приоритет: {decision['priority']}, срок: {_format_due(decision['due_time_h'])}",
+        f"  Правила: {'; '.join(rule_trace)}",
+        f"  Объяснение: {package['explanation']}",
+        f"  Что делать: {'; '.join(package['what_to_do'])}",
+    ]
+
+
 def _decision_package(row: pd.Series) -> dict[str, object]:
     """Собирает структурированный пакет объяснения решения."""
     return {
@@ -667,6 +712,11 @@ def _rule_trace_list(value: object) -> list[str]:
     if pd.isna(value) or not str(value):
         return []
     return [item for item in str(value).split(";") if item]
+
+
+def _format_counts(counts: dict[str, int]) -> str:
+    """Форматирует словарь счетчиков в одну строку."""
+    return ", ".join(f"{key}={value}" for key, value in counts.items())
 
 
 def _format_due(value: object) -> str:
