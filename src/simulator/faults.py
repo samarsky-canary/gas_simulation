@@ -16,37 +16,50 @@ def apply_sensor_model(
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     """Преобразует истинные физические каналы в наблюдаемые измерения с шумом датчиков."""
+    # Определяем количество временных точек, для которых нужно смоделировать измерения.
     n = len(profile)
+
+    # Считаем линейный дрейф смещения датчиков давления в МПа от начала симуляции.
     drift = np.arange(n) * cfg.step_minutes / (60 * 24) * cfg.bias_drift_mpa_per_day
 
+    # Формируем наблюдаемое входное давление: истинное значение плюс дрейф и шум датчика.
     p_in = profile["p_in_true_mpa"].to_numpy() + drift + rng.normal(0, cfg.sigma_p_mpa, n)
+
+    # Формируем наблюдаемое выходное давление: истинное значение плюс тот же дрейф и шум датчика.
     p_out = physics["p_out_true_mpa"].to_numpy() + drift + rng.normal(0, cfg.sigma_p_mpa, n)
+
+    # Ограничиваем входное давление допустимым физическим диапазоном.
     p_in = np.clip(p_in, cfg.p_min_mpa, cfg.p_max_mpa)
+
+    # Ограничиваем выходное давление снизу нулем и сверху текущим входным давлением.
     p_out = np.clip(p_out, 0.0, p_in)
 
+    # Формируем наблюдаемый расход: истинный расход умножается на относительный шум датчика.
     q = profile["q_true_m3h"].to_numpy() * (1 + rng.normal(0, cfg.sigma_q_rel, n))
+
+    # Ограничиваем наблюдаемый расход неотрицательными значениями и расширенным верхним пределом.
     q = np.clip(q, 0.0, cfg.q_max_m3h * 1.2)
+
+    # Формируем наблюдаемую температуру: истинная температура плюс абсолютный шум датчика.
     t_c = profile["t_true_c"].to_numpy() + rng.normal(0, cfg.sigma_t_abs_c, n)
 
-    if cfg.use_dp_sensor:
-        # Если включен DP-датчик, перепад моделируется отдельным измерительным каналом.
-        delta_p = np.maximum(
-            0.0, physics["delta_p_true_kpa"].to_numpy() + rng.normal(0, cfg.sigma_dp_kpa, n)
-        )
-        source = "sensor"
-    else:
-        # Иначе перепад вычисляется как разность наблюдаемых абсолютных давлений.
-        delta_p = np.maximum(0.0, 1000.0 * (p_in - p_out))
-        source = "calc"
+    # Перепад вычисляем как разность наблюдаемых абсолютных давлений.
+    # Переводим разность давлений из МПа в кПа и запрещаем отрицательный перепад.
+    delta_p = np.maximum(0.0, 1000.0 * (p_in - p_out))
 
+    # Возвращаем наблюдаемую телеметрию как таблицу для последующей инъекции отказов.
     return pd.DataFrame(
         {
+            # Наблюдаемое входное давление, МПа.
             "p_in_mpa": p_in,
+            # Наблюдаемое выходное давление, МПа.
             "p_out_mpa": p_out,
+            # Рассчитанный перепад давления, кПа.
             "delta_p_kpa": delta_p,
+            # Наблюдаемый расход газа, м3/ч.
             "q_m3h": q,
+            # Наблюдаемая температура газа, градусы Цельсия.
             "t_c": t_c,
-            "delta_p_source": source,
         }
     )
 
@@ -87,11 +100,7 @@ def inject_faults(
     df["t_c"] = df["t_c"].clip(lower=cfg.t_min_c - 10, upper=cfg.t_max_c + 10)
     df["p_out_mpa"] = np.minimum(df["p_out_mpa"].clip(lower=0), df["p_in_mpa"])
 
-    if cfg.use_dp_sensor:
-        sensor_missing = df["delta_p_kpa"].isna()
-        df.loc[~sensor_missing, "delta_p_kpa"] = df.loc[~sensor_missing, "delta_p_kpa"].clip(lower=0)
-    else:
-        df["delta_p_kpa"] = np.maximum(0.0, 1000.0 * (df["p_in_mpa"] - df["p_out_mpa"]))
+    df["delta_p_kpa"] = np.maximum(0.0, 1000.0 * (df["p_in_mpa"] - df["p_out_mpa"]))
 
     return df
 

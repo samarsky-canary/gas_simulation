@@ -133,16 +133,12 @@ rows = duration_days * 24 * 60 / step_minutes
 | `sigma_p_mpa` | Шум датчиков давления. |
 | `sigma_q_rel` | Относительный шум датчика расхода. |
 | `sigma_t_abs_c` | Абсолютный шум датчика температуры. |
-| `sigma_dp_kpa` | Шум отдельного DP-датчика. |
-| `use_dp_sensor` | Если `false`, перепад считается как `1000 * (P_in - P_out)`. Если `true`, используется отдельный канал перепада. |
 
-В текущем базовом конфиге:
+Наблюдаемый перепад строится из наблюдаемых абсолютных давлений:
 
-```yaml
-use_dp_sensor: false
+```text
+deltaP_obs = max(0, 1000 * (P_in_obs - P_out_obs))
 ```
-
-Значит наблюдаемый перепад строится из наблюдаемых абсолютных давлений.
 
 ### 2.8. Дефекты и качество данных
 
@@ -322,7 +318,6 @@ P_out_true = max(0, P_in_true - deltaP_true / 1000)
 - `q_m3h`;
 - `t_c`;
 - `delta_p_kpa`;
-- `delta_p_source`;
 
 Давления:
 
@@ -348,11 +343,7 @@ T_obs = T_true + N(0, sigma_t_abs_c)
 Перепад давления:
 
 ```text
-если use_dp_sensor = false:
-    deltaP_obs = max(0, 1000 * (P_in_obs - P_out_obs))
-
-если use_dp_sensor = true:
-    deltaP_obs = max(0, deltaP_true + N(0, sigma_dp_kpa))
+deltaP_obs = max(0, 1000 * (P_in_obs - P_out_obs))
 ```
 
 ### 4.6. Инжекция дефектов датчиков
@@ -481,7 +472,6 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `delta_p_kpa` | sensor model | Наблюдаемый перепад. |
 | `q_m3h` | sensor model | Наблюдаемый расход. |
 | `t_c` | sensor model | Наблюдаемая температура. |
-| `delta_p_source` | sensor model | `calc` или `sensor`. |
 | `quality_code` | validation | Код качества строки. |
 | `state_obs` | labels | Наблюдаемое состояние. |
 | `alarm_flag` | labels | Тревога warning/critical. |
