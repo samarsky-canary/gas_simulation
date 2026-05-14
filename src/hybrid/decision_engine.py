@@ -149,7 +149,7 @@ def format_console_decision_summary(decisions: pd.DataFrame, max_cards: int = 3)
         f"- Источники RUL: {_format_counts(source_counts)}",
         f"- Confidence total: среднее={confidence_mean:.3f}, минимум={confidence_min:.3f}",
         "",
-        "Краткие карточки решений:",
+        "Краткие карточки решений по источникам RUL:",
     ]
     for _, row in _sample_card_rows(decisions).head(max_cards).iterrows():
         package = _decision_package(row)
@@ -522,10 +522,16 @@ def _decision_cards_markdown(decisions: pd.DataFrame) -> str:
 
 
 def _sample_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
-    """Выбирает несколько репрезентативных карточек: последнюю строку и первые разные действия."""
+    """Выбирает карточки сначала по источникам RUL, затем по финалу и типам действий."""
     indices: list[int] = []
+    for source in ["ml_baseline", "conservative_min", "analytic_fallback", "analytic_data_veto"]:
+        index = _representative_source_index(decisions, source)
+        if index is not None:
+            indices.append(index)
+
     if len(decisions) > 0:
         indices.append(int(decisions.index[-1]))
+
     action_order = [
         "sensor_check",
         "shutdown_request",
@@ -540,6 +546,30 @@ def _sample_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
             indices.append(int(matches[0]))
     unique_indices = list(dict.fromkeys(indices))
     return decisions.loc[unique_indices]
+
+
+def _representative_source_index(decisions: pd.DataFrame, source: str) -> int | None:
+    """Выбирает диагностически значимую строку для конкретного источника RUL."""
+    subset = decisions[decisions["rul_source"].eq(source)]
+    if subset.empty:
+        return None
+
+    if source == "ml_baseline":
+        # Для ML показываем не первую нормальную точку, а момент с минимальным ML/fused RUL.
+        return int(subset["RUL_fused_h"].idxmin())
+
+    if source == "conservative_min":
+        # Консервативный минимум интересен там, где он влияет на действие, а не просто monitor.
+        prioritized = subset[~subset["action"].eq("monitor")]
+        if prioritized.empty:
+            prioritized = subset
+        return int(prioritized["RUL_fused_h"].idxmin())
+
+    prioritized_actions = ["manual_review", "sensor_check", "urgent_maintenance", "planned_maintenance"]
+    prioritized = subset[subset["action"].isin(prioritized_actions)]
+    if prioritized.empty:
+        prioritized = subset
+    return int(prioritized["RUL_fused_h"].idxmin())
 
 
 def _console_card_lines(package: dict[str, object]) -> list[str]:

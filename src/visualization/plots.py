@@ -46,7 +46,7 @@ def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict
     _plot_clog(data, paths["clog"])
     _plot_rul(data, paths["rul"])
     _plot_state(cfg, data, paths["state"])
-    _plot_delta_p_norm(data, paths["delta_p_norm"])
+    _plot_delta_p_norm(cfg, data, paths["delta_p_norm"])
     _plot_delta_p_vs_clog(cfg, data, paths["delta_p_vs_clog"])
     _plot_dashboard(cfg, data, paths["dashboard"])
     paths["description"].write_text(_description(), encoding="utf-8")
@@ -149,10 +149,13 @@ def _plot_state(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
     _save(fig, path)
 
 
-def _plot_delta_p_norm(df: pd.DataFrame, path: Path) -> None:
+def _plot_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
     """Рисует перепад, нормированный на расход, как более чистый индикатор засорения."""
     fig, ax = plt.subplots(figsize=(14, 5))
-    ax.plot(df["timestamp"], df["delta_p_norm_q2"], color="#17becf", linewidth=0.7)
+    ax.plot(df["timestamp"], df["delta_p_norm_q2"], color="#17becf", linewidth=0.7, label="deltaP_norm")
+    ax.axhline(cfg.dp_warn_kpa, color="#ffbf00", linestyle="--", linewidth=1.0, label="порог warning")
+    ax.axhline(cfg.dp_crit_kpa, color="#7f0000", linestyle="--", linewidth=1.0, label="порог critical")
+    ax.legend(loc="best")
     _style_time_axis(ax, "Нормированный перепад deltaP_norm(t)", "Нормированный перепад")
     _save(fig, path)
 
@@ -287,7 +290,7 @@ def _description() -> str:
             "- `04_zasorenie_clog_level.png` - скрытый уровень засорения фильтра.",
             "- `05_ostatochnyi_resurs_rul.png` - oracle и аналитический остаточный ресурс.",
             f"- `06_sostoyanie_filtra.png` - raw-состояние и устойчивое состояние по сглаженному `deltaP_norm`, окно {STATE_SMOOTH_HOURS} ч.",
-            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход и относительную плотность газа.",
+            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход и относительную плотность газа, с порогами warning/critical.",
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",

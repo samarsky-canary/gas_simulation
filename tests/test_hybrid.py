@@ -92,6 +92,7 @@ def test_format_console_decision_summary_contains_cards() -> None:
     summary = format_console_decision_summary(decisions, max_cards=2)
 
     assert "Краткая сводка гибридных решений" in summary
-    assert "Краткие карточки решений" in summary
+    assert "Краткие карточки решений по источникам RUL" in summary
     assert "RUL: ML=" in summary
+    assert "источник=ml_baseline" in summary
     assert "Что делать:" in summary
