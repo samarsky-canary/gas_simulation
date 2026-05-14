@@ -19,7 +19,13 @@ def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     out["alarm_flag"] = out["state_obs"].isin(["warning", "critical"])
     out["rul_oracle_h"] = _rul_oracle(true_dp_norm, cfg)
     out["rul_analytic_h"] = _rul_analytic(cfg, out)
-    out["is_censored"] = out["rul_oracle_h"].isna()
+    out["is_rul_unknown"] = out["rul_oracle_h"].isna()
+    """
+    простой индекс “насколько близко фильтр к критическому состоянию”.
+        0.0  — перепад около нуля
+        0.5  — половина критического порога
+        1.0  — достигнут или превышен критический поро
+    """
     out["rule_health_index"] = (out["delta_p_norm_q2"] / cfg.dp_crit_kpa).clip(lower=0, upper=1)
     return out
 
@@ -68,9 +74,6 @@ def _true_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
 
 
 def _observed_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
-    """Нормирует наблюдаемый перепад по расходу и относительной плотности газа."""
-    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
-        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
-    )
-    flow_density = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel
-    return df["delta_p_kpa"] / np.maximum(flow_density, 1e-3)
+    """Нормирует наблюдаемый перепад по расходу."""
+    flow_factor = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow
+    return df["delta_p_kpa"] / np.maximum(flow_factor, 1e-3)

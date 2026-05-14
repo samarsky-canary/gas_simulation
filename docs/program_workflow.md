@@ -70,7 +70,6 @@ dataset_schema.md
 - `deltaP_kPa`;
 - `Q_m3h`;
 - `T_C`;
-- `rho_rel`;
 - `clog_level`;
 - `deltaP_norm_kPa`;
 - `state`;

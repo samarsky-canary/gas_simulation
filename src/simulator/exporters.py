@@ -44,7 +44,7 @@ TRUTH_COLUMNS = [
     "state_true",
     "rul_oracle_h",
     "rul_analytic_h",
-    "is_censored",
+    "is_rul_unknown",
 ]
 
 CANONICAL_DATASET_COLUMNS = [
@@ -56,7 +56,6 @@ CANONICAL_DATASET_COLUMNS = [
     "deltaP_kPa",
     "Q_m3h",
     "T_C",
-    "rho_rel",
     "clog_level",
     "deltaP_norm_kPa",
     "state",
@@ -71,7 +70,6 @@ ML_INPUT_COLUMNS = [
     "deltaP_kPa",
     "Q_m3h",
     "T_C",
-    "rho_rel",
     "deltaP_norm_kPa",
 ]
 
@@ -105,7 +103,7 @@ RU_COLUMN_NAMES = {
     "alarm_flag": "флаг_тревоги",
     "rul_oracle_h": "остаточный_ресурс_oracle_ч",
     "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "is_censored": "цензурировано",
+    "is_rul_unknown": "rul_неизвестен",
     "delta_p_norm_q2": "перепад_нормированный_по_расходу",
     "rule_health_index": "индекс_состояния_по_правилу",
 }
@@ -130,7 +128,7 @@ RU_VALUE_MAPS = {
     },
     "alarm_flag": {True: "да", False: "нет"},
     "maintenance_event": {True: "да", False: "нет"},
-    "is_censored": {True: "да", False: "нет"},
+    "is_rul_unknown": {True: "да", False: "нет"},
 }
 
 OPERATION_DESCRIPTIONS = [
@@ -250,12 +248,9 @@ def export_run(
 
 def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Собирает зафиксированный датасет с внешними именами колонок для CSV/Parquet."""
-    # rho_rel и deltaP_norm считаются из наблюдаемых каналов, поэтому их можно подавать на вход модели.
-    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
-        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
-    )
+    # Для упрощенной модели нормируем перепад только по расходу.
     delta_p_norm = df["delta_p_kpa"] / (
-        ((df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel).clip(lower=1e-3)
+        ((df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow).clip(lower=1e-3)
     )
     dataset = pd.DataFrame(
         {
@@ -267,7 +262,6 @@ def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
             "deltaP_kPa": df["delta_p_kpa"],
             "Q_m3h": df["q_m3h"],
             "T_C": df["t_c"],
-            "rho_rel": rho_rel,
             "clog_level": df["clog_level"],
             "deltaP_norm_kPa": delta_p_norm,
             "state": df["state_obs"],
@@ -321,9 +315,8 @@ def _dataset_schema_markdown() -> str:
         ("deltaP_kPa", "float", "кПа", "Наблюдаемый перепад давления."),
         ("Q_m3h", "float", "м3/ч", "Наблюдаемый расход газа."),
         ("T_C", "float", "°C", "Наблюдаемая температура газа."),
-        ("rho_rel", "float", "отн. ед.", "Относительная плотность, рассчитанная из наблюдаемых P и T."),
         ("clog_level", "float", "0..1", "Скрытый уровень засорения симулятора."),
-        ("deltaP_norm_kPa", "float", "кПа", "Перепад, нормированный на расход и относительную плотность."),
+        ("deltaP_norm_kPa", "float", "кПа", "Перепад, нормированный на расход."),
         ("state", "category", "-", "Состояние по наблюдаемому перепаду: normal/warning/critical/unknown."),
         ("RUL_oracle_h", "float", "ч", "Истинный RUL до критического порога, доступен только в синтетике."),
         ("RUL_analytic_h", "float", "ч", "Аналитическая оценка остаточного ресурса."),

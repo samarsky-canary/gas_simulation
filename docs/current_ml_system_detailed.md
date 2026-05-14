@@ -86,7 +86,7 @@ rows = duration_days * 24 * 60 / step_minutes
 | `a_p_mpa` | Амплитуда суточных колебаний входного давления. |
 | `p_process_std_mpa` | Случайные плавные колебания входного давления. |
 
-Входное давление используется не только как канал телеметрии, но и для расчёта относительной плотности газа `rho_rel`.
+Входное давление используется как канал телеметрии и для расчета наблюдаемого перепада давления.
 
 ### 2.4. Температура газа `T`
 
@@ -410,18 +410,15 @@ random < p_stuck
 - `alarm_flag`;
 - `rul_oracle_h`;
 - `rul_analytic_h`;
-- `is_censored`;
+- `is_rul_unknown`;
 - `rule_health_index`.
 
 Наблюдаемый нормированный перепад:
 
 ```text
-rho_rel = (P_in_obs / P_in_nominal)
-          * ((T_nominal + 273.15) / (T_obs + 273.15))
+flow_factor = (Q_obs / Q_nominal) ^ alpha_flow
 
-flow_density = (Q_obs / Q_nominal) ^ alpha_flow * rho_rel
-
-deltaP_norm_obs = deltaP_obs / max(flow_density, 1e-3)
+deltaP_norm_obs = deltaP_obs / max(flow_factor, 1e-3)
 ```
 
 Истинный нормированный перепад:
@@ -501,7 +498,7 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `state_true` | labels | Истинное состояние по clean-перепаду. |
 | `rul_oracle_h` | labels | Истинный RUL до critical. |
 | `rul_analytic_h` | labels | Аналитический RUL. |
-| `is_censored` | labels | Нет critical в будущем горизонте. |
+| `is_rul_unknown` | labels | Нет critical в будущем горизонте, поэтому точный oracle-RUL неизвестен. |
 
 Русская версия: `truth_labels_ru.csv`.
 
@@ -532,26 +529,18 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `deltaP_kPa` | `delta_p_kpa` | да | Наблюдаемый перепад. |
 | `Q_m3h` | `q_m3h` | да | Наблюдаемый расход. |
 | `T_C` | `t_c` | да | Наблюдаемая температура. |
-| `rho_rel` | расчёт | да | Относительная плотность по P и T. |
 | `clog_level` | degradation | нет | Скрытая переменная симулятора. |
-| `deltaP_norm_kPa` | расчёт | да | Перепад, нормированный по расходу и плотности. |
+| `deltaP_norm_kPa` | расчёт | да | Перепад, нормированный по расходу. |
 | `state` | `state_obs` | target | Наблюдаемое состояние. |
 | `RUL_oracle_h` | labels | target | Истинный RUL для обучения. |
 | `RUL_analytic_h` | labels | baseline/fallback | Аналитический RUL. |
 | `quality_code` | validation | можно для фильтрации | Код качества строки. |
 
-Формула `rho_rel`:
-
-```text
-rho_rel = (P_in_MPa / P_in_nominal)
-          * ((T_nominal + 273.15) / (T_C + 273.15))
-```
-
 Формула `deltaP_norm_kPa`:
 
 ```text
 deltaP_norm_kPa = deltaP_kPa
-  / max((Q_m3h / Q_nominal) ^ alpha_flow * rho_rel, 1e-3)
+  / max((Q_m3h / Q_nominal) ^ alpha_flow, 1e-3)
 ```
 
 ### 5.5. `metadata.json`
@@ -608,22 +597,19 @@ feature_description.md
 | `state_true` | Истинное состояние. |
 | `rul_oracle_h` | Истинный RUL. |
 | `rul_analytic_h` | Аналитический RUL. |
-| `is_censored` | Флаг цензурирования RUL. |
+| `is_rul_unknown` | Флаг неизвестного oracle-RUL. |
 
 ### 6.2. Формулы признаков
 
 #### `deltaP_norm_kPa`
 
 ```text
-rho_rel = (p_in_mpa / p_in_nominal_mpa)
-          * ((t_nominal_c + 273.15) / (t_c + 273.15))
-
-flow_factor = max((q_m3h / q_nominal_m3h) ^ alpha_flow * rho_rel, 1e-3)
+flow_factor = max((q_m3h / q_nominal_m3h) ^ alpha_flow, 1e-3)
 
 deltaP_norm_kPa = delta_p_kpa / flow_factor
 ```
 
-Смысл: очищает перепад от влияния расхода и плотности.
+Смысл: очищает перепад от влияния расхода.
 
 #### `deltaP_roll_mean_1h`
 
@@ -782,7 +768,7 @@ RUL_oracle_h(t) = время от текущей точки t
 Если в будущем critical не наступает, значение остаётся `NaN`. Такая строка помечается:
 
 ```text
-is_censored = true
+is_rul_unknown = true
 ```
 
 `RUL_oracle_h` используется как target для обучения ML-регрессора.
@@ -830,7 +816,6 @@ RUL_oracle_h
 - `deltaP_kPa`;
 - `Q_m3h`;
 - `T_C`;
-- `rho_rel`;
 - `deltaP_norm_kPa`;
 - `deltaP_roll_mean_1h`;
 - `deltaP_roll_std_1h`;

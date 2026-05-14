@@ -24,13 +24,13 @@
 ## Что проверено методически
 
 1. Датасет имеет фиксированный контракт колонок:
-   `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`.
+   `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`.
 2. Входы ML-моделей ограничены наблюдаемыми и производными признаками:
-   `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa` и признаки feature builder.
+   `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `deltaP_norm_kPa` и признаки feature builder.
 3. Скрытые и целевые переменные не используются как входы:
    `clog_level`, `RUL_oracle_h`, `state`.
-4. `deltaP_norm_kPa` нормируется по расходу и относительной плотности газа:
-   `deltaP_kPa / max((Q / Q_nominal)^alpha_flow * rho_rel, eps)`.
+4. `deltaP_norm_kPa` нормируется по расходу:
+   `deltaP_kPa / max((Q / Q_nominal)^alpha_flow, eps)`.
 5. `state`, `RUL_oracle_h`, `RUL_analytic_h` и rule-based baseline опираются на нормированный перепад, а не на сырой `deltaP_kPa`.
 6. Гибридный слой учитывает качество данных, согласованность ML и аналитического RUL, итоговое доверие и правила безопасности.
 

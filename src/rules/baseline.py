@@ -162,11 +162,8 @@ def _to_russian_csv(baseline: pd.DataFrame, path: Path) -> None:
 
 def _delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
     """Считает нормированный перепад для rule layer по наблюдаемым каналам."""
-    rho_rel = (df["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
-        (cfg.t_nominal_c + 273.15) / (df["t_c"] + 273.15)
-    )
-    flow_density = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel
-    return df["delta_p_kpa"] / flow_density.clip(lower=1e-3)
+    flow_factor = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow
+    return df["delta_p_kpa"] / flow_factor.clip(lower=1e-3)
 
 
 def _description(cfg: ScenarioConfig) -> str:

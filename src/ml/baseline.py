@@ -22,7 +22,6 @@ ML_INPUT_COLUMNS = [
     "deltaP_kPa",
     "Q_m3h",
     "T_C",
-    "rho_rel",
     "deltaP_norm_kPa",
     "deltaP_roll_mean_1h",
     "deltaP_roll_std_1h",

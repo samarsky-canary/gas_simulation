@@ -43,7 +43,6 @@
 - `deltaP_kPa`
 - `Q_m3h`
 - `T_C`
-- `rho_rel`
 - `clog_level`
 - `deltaP_norm_kPa`
 - `state`
@@ -51,7 +50,7 @@
 - `RUL_analytic_h`
 - `quality_code`
 
-Для входа ML-моделей можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa`.
+Для входа ML-моделей можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `deltaP_norm_kPa`.
 
 Нельзя подавать на вход ML-моделей: `clog_level`, `RUL_oracle_h`, `state`. Это скрытые или целевые поля симулятора.
 
@@ -85,7 +84,7 @@ Feature builder создает минимальный набор признак�
 - `missing_rate_1h` - доля строк с пропусками за 1 час.
 - `time_above_warn` - накопленное время выше warning-порога после последнего обслуживания.
 
-В таблицу признаков также добавлены `state_obs`, `state_true`, `rul_oracle_h`, `rul_analytic_h` и `is_censored`, чтобы один файл можно было использовать для быстрых baseline-экспериментов.
+В таблицу признаков также добавлены `state_obs`, `state_true`, `rul_oracle_h`, `rul_analytic_h` и `is_rul_unknown`, чтобы один файл можно было использовать для быстрых baseline-экспериментов.
 
 ## Rule-Based Baseline
 

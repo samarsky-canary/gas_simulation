@@ -21,7 +21,6 @@ def _dataset() -> pd.DataFrame:
             "deltaP_kPa": [2.0, 6.0, 11.0, 4.0],
             "Q_m3h": [600.0] * 4,
             "T_C": [15.0] * 4,
-            "rho_rel": [1.0] * 4,
             "clog_level": [0.1, 0.5, 0.9, 0.2],
             "deltaP_norm_kPa": [2.0, 6.0, 11.0, 4.0],
             "state": ["normal", "warning", "critical", "unknown"],

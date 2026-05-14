@@ -338,7 +338,7 @@ def _description() -> str:
             "- `04_zasorenie_clog_level.png` - скрытый уровень засорения фильтра.",
             "- `05_ostatochnyi_resurs_rul.png` - oracle и аналитический остаточный ресурс.",
             f"- `06_sostoyanie_filtra.png` - raw-состояние, устойчивое состояние по сглаженному `deltaP_norm` и вертикальные отметки карточек решений, окно {STATE_SMOOTH_HOURS} ч.",
-            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход и относительную плотность газа, с порогами warning/critical.",
+            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход, с порогами warning/critical.",
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",

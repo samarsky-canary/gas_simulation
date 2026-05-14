@@ -28,7 +28,7 @@ FEATURE_EXPORT_COLUMNS = [
     "state_true",
     "rul_oracle_h",
     "rul_analytic_h",
-    "is_censored",
+    "is_rul_unknown",
 ]
 
 RU_FEATURE_COLUMNS = {
@@ -47,7 +47,7 @@ RU_FEATURE_COLUMNS = {
     "state_true": "истинное_состояние",
     "rul_oracle_h": "остаточный_ресурс_oracle_ч",
     "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "is_censored": "цензурировано",
+    "is_rul_unknown": "rul_неизвестен",
 }
 
 RU_VALUE_MAPS = {
@@ -63,14 +63,14 @@ RU_VALUE_MAPS = {
         "critical": "критическое",
         "unknown": "неизвестно",
     },
-    "is_censored": {True: "да", False: "нет"},
+    "is_rul_unknown": {True: "да", False: "нет"},
 }
 
 FEATURE_DESCRIPTIONS = [
     {
         "name": "deltaP_norm_kPa",
         "meaning": "Перепад давления, очищенный от влияния расхода.",
-        "formula": "deltaP_kPa / max((Q_m3h / Q_nominal)^2 * rho_rel, eps)",
+        "formula": "deltaP_kPa / max((Q_m3h / Q_nominal)^alpha_flow, eps)",
         "use": "Главный признак деградации для правил и baseline-моделей.",
     },
     {
@@ -119,13 +119,8 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     six_hours = _window_steps(cfg, hours=6)
     dt_h = cfg.step_minutes / 60.0
 
-    # Нормировка на расход и плотность отделяет рост сопротивления фильтра от режима потока.
-    rho_rel = (features["p_in_mpa"] / cfg.p_in_nominal_mpa) * (
-        (cfg.t_nominal_c + 273.15) / (features["t_c"] + 273.15)
-    )
-    flow_factor = np.maximum(
-        (features["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow * rho_rel, 1e-3
-    )
+    # Нормировка на расход отделяет рост сопротивления фильтра от режима потока.
+    flow_factor = np.maximum((features["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow, 1e-3)
     features["deltaP_norm_kPa"] = features["delta_p_kpa"] / flow_factor
     features["deltaP_roll_mean_1h"] = (
         features["delta_p_kpa"].rolling(one_hour, min_periods=1).mean()
