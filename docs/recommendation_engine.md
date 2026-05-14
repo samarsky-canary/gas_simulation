@@ -42,7 +42,6 @@ build_hybrid_decisions(cfg, dataset, features, ml_predictions)
 - `RUL_oracle_h`;
 - `RUL_analytic_h`;
 - качество данных;
-- флаги дефектов.
 
 ### 2.2. `features`
 
@@ -88,7 +87,6 @@ hybrid/decision_cards.md
 | `scenario` | Сценарий. |
 | `state` | Текущее состояние фильтра из датасета. |
 | `quality_code` | Код качества данных. |
-| `fault_flags` | Детальные флаги дефектов. |
 | `deltaP_norm_kPa` | Нормированный перепад. |
 | `deltaP_roll_mean_1h` | Средний перепад за 1 час. |
 | `deltaP_slope_6h` | Наклон перепада за 6 часов. |
@@ -150,10 +148,7 @@ time_above_warn = 0
 | `quality_code` | База |
 |---|---:|
 | `good` | `1.00` |
-| `spike` | `0.75` |
-| `stuck` | `0.65` |
 | `missing` | `0.45` |
-| `biased` | `0.60` |
 | `invalid` | `0.20` |
 | другое | `0.50` |
 
@@ -163,15 +158,7 @@ time_above_warn = 0
 confidence_data = 0.05
 ```
 
-Дальше применяются штрафы по `fault_flags`:
-
-```text
-если flags содержит "missing": confidence -= 0.20
-если flags содержит "stuck":   confidence -= 0.15
-если flags содержит "spike":   confidence -= 0.10
-```
-
-И штраф за долю пропусков:
+Дальше применяется штраф за долю пропусков:
 
 ```text
 confidence -= min(missing_rate_1h, 1.0) * 0.35
@@ -505,4 +492,3 @@ Reasoner не обучается. Это не ML-модель, а инженер
 ```
 
 Именно этот слой делает систему не просто прогнозной, а рекомендательной.
-

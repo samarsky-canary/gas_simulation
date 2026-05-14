@@ -50,7 +50,6 @@
 - `RUL_oracle_h`
 - `RUL_analytic_h`
 - `quality_code`
-- `fault_flags`
 
 Для входа ML-моделей можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa`.
 

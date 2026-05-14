@@ -47,7 +47,6 @@ def apply_sensor_model(
             "q_m3h": q,
             "t_c": t_c,
             "delta_p_source": source,
-            "fault_flags": "",
         }
     )
 
@@ -58,15 +57,12 @@ def inject_faults(
     """Добавляет пропуски, выбросы и залипания датчиков в наблюдаемую телеметрию."""
     df = observed.copy()
     n = len(df)
-    flags: list[set[str]] = [set() for _ in range(n)]
 
     for channel in OBSERVED_CHANNELS:
         # Пропуск имитирует потерю телеметрии по конкретному каналу.
         missing = rng.random(n) < cfg.p_missing
         if missing.any():
             df.loc[missing, channel] = np.nan
-            for i in np.flatnonzero(missing):
-                flags[i].add(f"missing:{channel}")
 
         # Выброс имитирует короткий нехарактерный скачок измерения.
         spikes = rng.random(n) < cfg.p_spike
@@ -76,8 +72,6 @@ def inject_faults(
                 0.8 * scale, 1.5 * scale, spikes.sum()
             )
             df.loc[spikes, channel] = df.loc[spikes, channel].to_numpy() + values
-            for i in np.flatnonzero(spikes):
-                flags[i].add(f"spike:{channel}")
 
         starts = np.flatnonzero(rng.random(n) < cfg.p_stuck)
         for start in starts:
@@ -87,8 +81,6 @@ def inject_faults(
             length = int(rng.integers(cfg.stuck_min_steps, cfg.stuck_max_steps + 1))
             end = min(start + length, n)
             df.loc[start:end - 1, channel] = df.at[start - 1, channel]
-            for i in range(start, end):
-                flags[i].add(f"stuck:{channel}")
 
     df["p_in_mpa"] = df["p_in_mpa"].clip(lower=cfg.p_min_mpa, upper=cfg.p_max_mpa)
     df["q_m3h"] = df["q_m3h"].clip(lower=0, upper=cfg.q_max_m3h * 1.2)
@@ -101,7 +93,6 @@ def inject_faults(
     else:
         df["delta_p_kpa"] = np.maximum(0.0, 1000.0 * (df["p_in_mpa"] - df["p_out_mpa"]))
 
-    df["fault_flags"] = [";".join(sorted(item)) if item else "" for item in flags]
     return df
 
 

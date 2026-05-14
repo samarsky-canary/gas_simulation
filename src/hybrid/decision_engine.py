@@ -15,7 +15,6 @@ HYBRID_COLUMNS = [
     "scenario",
     "state",
     "quality_code",
-    "fault_flags",
     "deltaP_norm_kPa",
     "deltaP_roll_mean_1h",
     "deltaP_slope_6h",
@@ -43,7 +42,6 @@ RU_COLUMNS = {
     "scenario": "сценарий",
     "state": "состояние",
     "quality_code": "код_качества",
-    "fault_flags": "флаги_сбоев",
     "deltaP_norm_kPa": "нормированный_перепад_давления_кпа",
     "deltaP_roll_mean_1h": "средний_перепад_за_1ч_кпа",
     "deltaP_slope_6h": "скорость_роста_перепада_за_6ч",
@@ -75,10 +73,7 @@ RU_VALUES = {
     "quality_code": {
         "good": "хорошие данные",
         "missing": "есть пропуски",
-        "spike": "выброс",
-        "stuck": "залипание датчика",
         "invalid": "некорректные данные",
-        "biased": "смещение датчика",
     },
     "rul_source": {
         "ml_baseline": "ML baseline",
@@ -247,28 +242,17 @@ def _decide_row(cfg: ScenarioConfig, row: pd.Series) -> dict[str, object]:
 
 
 def _confidence_data(row: pd.Series, hard_veto: bool) -> float:
-    """Оценивает доверие к данным по quality_code, fault_flags и пропускам в окне."""
+    """Оценивает доверие к данным по quality_code и пропускам в окне."""
     if hard_veto:
         return 0.05
 
     quality_code = str(row.get("quality_code", "unknown"))
     base_by_quality = {
         "good": 1.0,
-        "spike": 0.75,
-        "stuck": 0.65,
         "missing": 0.45,
-        "biased": 0.60,
         "invalid": 0.20,
     }
     confidence = base_by_quality.get(quality_code, 0.50)
-    flags = str(row.get("fault_flags", "") or "")
-    if flags:
-        if "missing" in flags:
-            confidence -= 0.20
-        if "stuck" in flags:
-            confidence -= 0.15
-        if "spike" in flags:
-            confidence -= 0.10
     missing_rate = float(row.get("missing_rate_1h", 0.0) or 0.0)
     confidence -= min(missing_rate, 1.0) * 0.35
     return float(np.clip(confidence, 0.0, 1.0))
@@ -341,7 +325,6 @@ def _apply_rules(
     trace: list[str] = [fusion_rule]
     state = str(row.get("state", "unknown"))
     quality_code = str(row.get("quality_code", "unknown"))
-    fault_flags = str(row.get("fault_flags", "") or "")
 
     if _is_low_outlet_pressure(cfg, row) and confidence_data >= 0.50:
         trace.extend(["R-SAFE-002", "R-EXPL-001"])
@@ -370,7 +353,7 @@ def _apply_rules(
             "P0",
             0.0,
             trace,
-            f"Данные ненадёжны: quality_code={quality_code}, fault_flags={fault_flags or 'нет'}. Требуется проверка датчиков.",
+            f"Данные ненадёжны: quality_code={quality_code}. Требуется проверка датчиков.",
         )
 
     if state == "critical" and confidence_data >= 0.50:
@@ -585,7 +568,7 @@ def _console_card_lines(package: dict[str, object]) -> list[str]:
     return [
         "",
         f"- Фильтр {package['filter_id']} | {package['timestamp']}",
-        f"  Состояние: {str(package['state']).upper()}, качество: {str(quality['quality_code']).upper()}, флаги: {quality['fault_flags'] or 'нет'}",
+        f"  Состояние: {str(package['state']).upper()}, качество: {str(quality['quality_code']).upper()}",
         f"  RUL: ML={_fmt_optional(rul['ml_baseline_h'])} ч, analytic={_fmt_optional(rul['analytic_h'])} ч, fused={_fmt_optional(rul['fused_h'])} ч, источник={rul['source']}",
         f"  Confidence total: {_fmt_optional(confidence['total'])}",
         f"  Действие: {decision['action']}, приоритет: {decision['priority']}, срок: {_format_due(decision['due_time_h'])}",
@@ -604,7 +587,6 @@ def _decision_package(row: pd.Series) -> dict[str, object]:
         "state": _string_value(row.get("state")),
         "quality": {
             "quality_code": _string_value(row.get("quality_code")),
-            "fault_flags": _string_value(row.get("fault_flags")),
         },
         "rul": {
             "ml_baseline_h": _number_or_none(row.get("RUL_ml_h")),
@@ -645,7 +627,6 @@ def _decision_card_lines(package: dict[str, object]) -> list[str]:
         "",
         f"Состояние: `{str(package['state']).upper()}`",
         f"Качество данных: `{str(quality['quality_code']).upper()}`",
-        f"Флаги данных: `{quality['fault_flags'] or 'нет'}`",
         "",
         f"RUL ML baseline: `{_fmt_optional(rul['ml_baseline_h'])}` ч",
         f"RUL analytic: `{_fmt_optional(rul['analytic_h'])}` ч",

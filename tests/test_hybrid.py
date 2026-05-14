@@ -28,7 +28,6 @@ def _dataset() -> pd.DataFrame:
             "RUL_oracle_h": [200.0, 50.0, 5.0, 120.0],
             "RUL_analytic_h": [210.0, 55.0, 8.0, 130.0],
             "quality_code": ["good", "good", "good", "missing"],
-            "fault_flags": ["", "", "", "missing:p_in_mpa"],
         }
     )
 

@@ -28,7 +28,6 @@ def test_delta_p_slope_6h_is_positive_for_increasing_series() -> None:
     df["delta_p_kpa"] = np.arange(len(df), dtype=float)
     df["q_m3h"] = cfg.q_nominal_m3h
     df["quality_code"] = "good"
-    df["fault_flags"] = ""
 
     features = build_features(cfg, df)
 

@@ -144,7 +144,6 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
         .isna()
         .any(axis=1)
         | features["quality_code"].eq("missing")
-        | features["fault_flags"].fillna("").str.contains("missing", regex=False)
     )
     features["missing_rate_1h"] = missing_row.rolling(one_hour, min_periods=1).mean()
 

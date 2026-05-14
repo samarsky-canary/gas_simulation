@@ -23,7 +23,6 @@ OBSERVED_COLUMNS = [
     "t_c",
     "delta_p_source",
     "quality_code",
-    "fault_flags",
     "state_obs",
     "alarm_flag",
     "delta_p_norm_q2",
@@ -65,7 +64,6 @@ CANONICAL_DATASET_COLUMNS = [
     "RUL_oracle_h",
     "RUL_analytic_h",
     "quality_code",
-    "fault_flags",
 ]
 
 ML_INPUT_COLUMNS = [
@@ -104,7 +102,6 @@ RU_COLUMN_NAMES = {
     "t_c": "температура_с",
     "delta_p_source": "источник_перепада_давления",
     "quality_code": "код_качества",
-    "fault_flags": "флаги_сбоев",
     "state_true": "истинное_состояние",
     "state_obs": "наблюдаемое_состояние",
     "alarm_flag": "флаг_тревоги",
@@ -120,10 +117,7 @@ RU_VALUE_MAPS = {
     "quality_code": {
         "good": "хорошие данные",
         "missing": "есть пропуски",
-        "spike": "выброс",
-        "stuck": "залипание датчика",
         "invalid": "некорректные данные",
-        "biased": "смещение датчика",
     },
     "state_true": {
         "normal": "норма",
@@ -169,7 +163,7 @@ OPERATION_DESCRIPTIONS = [
     },
     {
         "step": "7. Инжекция сбоев",
-        "description": "Имитация пропусков, кратковременных выбросов и залипания датчиков с записью флагов качества.",
+        "description": "Имитация пропусков, кратковременных выбросов и залипания датчиков с последующей оценкой качества строки.",
     },
     {
         "step": "8. Контроль качества",
@@ -283,7 +277,6 @@ def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
             "RUL_oracle_h": df["rul_oracle_h"],
             "RUL_analytic_h": df["rul_analytic_h"],
             "quality_code": df["quality_code"],
-            "fault_flags": df["fault_flags"],
         }
     )
     return dataset[CANONICAL_DATASET_COLUMNS]
@@ -338,7 +331,6 @@ def _dataset_schema_markdown() -> str:
         ("RUL_oracle_h", "float", "ч", "Истинный RUL до критического порога, доступен только в синтетике."),
         ("RUL_analytic_h", "float", "ч", "Аналитическая оценка остаточного ресурса."),
         ("quality_code", "category", "-", "Код качества строки."),
-        ("fault_flags", "string", "-", "Детальные флаги сбоев датчиков."),
     ]
     lines = [
         "# Зафиксированный формат датасета",

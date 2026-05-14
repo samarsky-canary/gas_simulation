@@ -155,7 +155,7 @@ use_dp_sensor: false
 | `stuck_min_steps` | Минимальная длительность залипания. |
 | `stuck_max_steps` | Максимальная длительность залипания. |
 
-Дефекты записываются в колонку `fault_flags`, а общий код качества строки записывается в `quality_code`.
+Детальные дефекты не сохраняются отдельной колонкой. В итоговых таблицах остаётся только общий `quality_code`: `good`, `missing` или `invalid`.
 
 ## 3. Сценарии
 
@@ -323,7 +323,6 @@ P_out_true = max(0, P_in_true - deltaP_true / 1000)
 - `t_c`;
 - `delta_p_kpa`;
 - `delta_p_source`;
-- `fault_flags`.
 
 Давления:
 
@@ -369,7 +368,6 @@ T_obs = T_true + N(0, sigma_t_abs_c)
 ```text
 random < p_missing
 => значение канала становится NaN
-=> fault_flags добавляет missing:<channel>
 ```
 
 Выброс:
@@ -377,7 +375,6 @@ random < p_missing
 ```text
 random < p_spike
 => к значению добавляется случайный скачок
-=> fault_flags добавляет spike:<channel>
 ```
 
 Залипание:
@@ -385,7 +382,6 @@ random < p_spike
 ```text
 random < p_stuck
 => значение канала удерживается постоянным на интервале
-=> fault_flags добавляет stuck:<channel>
 ```
 
 После дефектов значения снова ограничиваются физическими диапазонами.
@@ -403,19 +399,15 @@ random < p_stuck
 Формируются:
 
 - `quality_code`;
-- уточнённый `fault_flags`;
 - объект `QCReport`.
 
 Логика `quality_code`:
 
 | Условие | `quality_code` |
 |---|---|
-| Нет флагов | `good` |
+| Нет проблем качества | `good` |
 | Есть пропуски | `missing` |
-| Есть залипание | `stuck` |
-| Есть выброс | `spike` |
 | Есть физическое нарушение | `invalid` |
-| Прочие флаги | `biased` |
 
 ### 4.8. Состояния и RUL
 
@@ -491,7 +483,6 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `t_c` | sensor model | Наблюдаемая температура. |
 | `delta_p_source` | sensor model | `calc` или `sensor`. |
 | `quality_code` | validation | Код качества строки. |
-| `fault_flags` | faults + validation | Детальные флаги дефектов. |
 | `state_obs` | labels | Наблюдаемое состояние. |
 | `alarm_flag` | labels | Тревога warning/critical. |
 | `delta_p_norm_q2` | labels | Нормированный наблюдаемый перепад. |
@@ -558,7 +549,6 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `RUL_oracle_h` | labels | target | Истинный RUL для обучения. |
 | `RUL_analytic_h` | labels | baseline/fallback | Аналитический RUL. |
 | `quality_code` | validation | можно для фильтрации | Код качества строки. |
-| `fault_flags` | faults + validation | можно для фильтрации | Флаги дефектов. |
 
 Формула `rho_rel`:
 
@@ -689,7 +679,6 @@ Q_roll_mean_1h = rolling_mean(q_m3h, window_1h)
 row_has_missing =
   any NaN in [p_in_mpa, p_out_mpa, delta_p_kpa, q_m3h, t_c]
   OR quality_code == missing
-  OR fault_flags contains "missing"
 ```
 
 Затем:
@@ -1028,7 +1017,7 @@ build_plots(cfg, df, output_dir, hybrid_decisions)
 
 1. Количество строк.
 2. Имя сценария.
-3. Количество строк с флагами качества.
+3. Количество строк с проблемами качества.
 4. Список созданных файлов.
 5. Список созданных признаков.
 6. Список файлов rule-based baseline.
@@ -1064,4 +1053,3 @@ build_plots(cfg, df, output_dir, hybrid_decisions)
 10. Передаём ML-прогноз в рекомендательный слой.
 11. Получаем действие по обслуживанию и диагностические графики.
 ```
-

@@ -24,7 +24,7 @@
 ## Что проверено методически
 
 1. Датасет имеет фиксированный контракт колонок:
-   `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`, `fault_flags`.
+   `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`.
 2. Входы ML-моделей ограничены наблюдаемыми и производными признаками:
    `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa` и признаки feature builder.
 3. Скрытые и целевые переменные не используются как входы:

@@ -75,7 +75,7 @@ def main() -> None:
 
     print(f"Сгенерировано строк: {len(df)}")
     print(f"Сценарий: {cfg.scenario_name}")
-    print(f"Строк с флагами качества: {report.rows_with_flags}")
+    print(f"Строк с проблемами качества: {report.rows_with_quality_issues}")
     print("Созданные файлы:")
     for name, path in paths.items():
         label = OUTPUT_LABELS.get(name, name)
