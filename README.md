@@ -11,7 +11,7 @@
 Результаты пишутся в `outputs/<scenario_name>/`:
 
 - `dataset.csv` / `dataset.parquet` - зафиксированный основной датасет с финальным контрактом колонок.
-- `dataset_schema.md` - описание колонок, разрешенных входов LSTM и запрещенных скрытых/целевых полей.
+- `dataset_schema.md` - описание колонок, разрешенных входов ML-моделей и запрещенных скрытых/целевых полей.
 - `raw_observed.csv` / `raw_observed.parquet` - наблюдаемая телеметрия и QC.
 - `raw_observed_ru.csv` - наблюдаемая телеметрия с русскими заголовками и русифицированными состояниями.
 - `truth_labels.csv` / `truth_labels.parquet` - скрытые состояния и целевые метки.
@@ -28,7 +28,6 @@
 - `rule_baseline_ru.csv` - русифицированный результат rule-based baseline.
 - `rule_baseline_description.md` - описание правил состояния и рекомендаций.
 - `ml_baseline/` - модели RandomForest, предсказания и метрики классического ML-baseline.
-- `lstm_windows/` - NumPy-окна временного ряда для RUL и state-задач.
 
 Англоязычные CSV/Parquet оставлены как стабильная машинная схема для кода, ML и последующей обработки. Русские CSV предназначены для просмотра, отчета и ручной проверки.
 
@@ -53,9 +52,9 @@
 - `quality_code`
 - `fault_flags`
 
-Для входа LSTM можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa`.
+Для входа ML-моделей можно использовать только наблюдаемые и производные поля: `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `rho_rel`, `deltaP_norm_kPa`.
 
-Нельзя подавать на вход LSTM: `clog_level`, `RUL_oracle_h`, `state`. Это скрытые или целевые поля симулятора.
+Нельзя подавать на вход ML-моделей: `clog_level`, `RUL_oracle_h`, `state`. Это скрытые или целевые поля симулятора.
 
 ## Операции симулятора
 
@@ -71,7 +70,7 @@
 10. Расчет признаков для baseline-моделей и интерпретации правил.
 11. Расчет rule-based baseline: состояние фильтра и рекомендация обслуживания.
 12. Обучение классического ML-baseline: RandomForestRegressor для RUL и RandomForestClassifier для state.
-13. Преобразование временного ряда в LSTM-окна.
+13. Построение гибридных решений на основе ML-прогноза, аналитического RUL и правил.
 14. Экспорт CSV, Parquet, metadata и русифицированных отчетных файлов.
 15. Построение графиков по расходу, давлениям, перепаду, засорению, RUL, состоянию и нормированному перепаду.
 
@@ -107,7 +106,7 @@ Feature builder создает минимальный набор признак�
 
 ## ML Baseline
 
-Перед LSTM обучается классический baseline:
+В текущей версии обучается классический ML baseline:
 
 - `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
 - `RandomForestClassifier` классифицирует `state`.
@@ -123,35 +122,6 @@ Feature builder создает минимальный набор признак�
 - `ml_predictions.parquet`
 - `ml_metrics.json`
 - `ml_baseline_report.md`
-
-## LSTM Windows
-
-Для подготовки к LSTM создаются окна фиксированной длины:
-
-- Окно входа: `24` часа.
-- Длина окна считается как `24 * 60 / step_minutes`.
-- При `step_minutes = 10` длина окна равна `144` точкам.
-- В текущем базовом конфиге `step_minutes = 5`, поэтому длина окна равна `288` точкам.
-
-Входные признаки:
-
-- `P_in_MPa`
-- `P_out_MPa`
-- `deltaP_kPa`
-- `Q_m3h`
-- `T_C`
-- `rho_rel`
-- `deltaP_norm_kPa`
-
-Target для RUL-задачи: `RUL_oracle_h`.
-Target для второй задачи: `state`.
-
-Артефакты:
-
-- `lstm_windows/lstm_rul_windows.npz` - `X`, `y`, `timestamps`, `feature_names`.
-- `lstm_windows/lstm_state_windows.npz` - `X`, `y`, `timestamps`, `feature_names`, `state_classes`.
-- `lstm_windows/lstm_windows_metadata.json` - формы массивов и параметры окна.
-- `lstm_windows/lstm_windows_description.md` - человекочитаемое описание.
 
 ## Графики
 

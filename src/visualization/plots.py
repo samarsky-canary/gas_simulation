@@ -10,6 +10,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from src.hybrid import select_decision_card_rows
 from src.simulator.config import ScenarioConfig
 
 
@@ -19,12 +20,18 @@ STATE_LABELS = ["неизвестно", "норма", "предупрежден�
 STATE_SMOOTH_HOURS = 3
 
 
-def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
+def build_plots(
+    cfg: ScenarioConfig,
+    df: pd.DataFrame,
+    output_dir: Path,
+    hybrid_decisions: pd.DataFrame | None = None,
+) -> dict[str, Path]:
     """Строит набор PNG-графиков для визуальной проверки синтетического прогона."""
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
     data = df.sort_values("timestamp").copy()
     data["timestamp"] = pd.to_datetime(data["timestamp"])
+    decision_cards = _prepare_decision_card_markers(hybrid_decisions)
 
     paths = {
         "q": plot_dir / "01_rashod_q.png",
@@ -45,7 +52,7 @@ def build_plots(cfg: ScenarioConfig, df: pd.DataFrame, output_dir: Path) -> dict
     _plot_delta_p(cfg, data, paths["delta_p"])
     _plot_clog(data, paths["clog"])
     _plot_rul(data, paths["rul"])
-    _plot_state(cfg, data, paths["state"])
+    _plot_state(cfg, data, paths["state"], decision_cards)
     _plot_delta_p_norm(cfg, data, paths["delta_p_norm"])
     _plot_delta_p_vs_clog(cfg, data, paths["delta_p_vs_clog"])
     _plot_dashboard(cfg, data, paths["dashboard"])
@@ -109,7 +116,12 @@ def _plot_rul(df: pd.DataFrame, path: Path) -> None:
     _save(fig, path)
 
 
-def _plot_state(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
+def _plot_state(
+    cfg: ScenarioConfig,
+    df: pd.DataFrame,
+    path: Path,
+    decision_cards: pd.DataFrame | None = None,
+) -> None:
     """Показывает raw-состояние и устойчивое состояние по сглаженному deltaP_norm."""
     fig, ax = plt.subplots(figsize=(14, 4))
     raw_codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
@@ -142,6 +154,7 @@ def _plot_state(cfg: ScenarioConfig, df: pd.DataFrame, path: Path) -> None:
             alpha=0.55,
             label="raw unknown / плохие данные",
         )
+    _plot_decision_card_markers(ax, decision_cards)
     ax.set_yticks(STATE_TICKS)
     ax.set_yticklabels(STATE_LABELS)
     ax.legend(loc="best")
@@ -260,6 +273,41 @@ def _stable_state_codes(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
     return codes
 
 
+def _prepare_decision_card_markers(hybrid_decisions: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Выбирает временные точки карточек решений для отметок на графике состояния."""
+    if hybrid_decisions is None or hybrid_decisions.empty:
+        return None
+    cards = select_decision_card_rows(hybrid_decisions).head(3).copy()
+    cards["timestamp"] = pd.to_datetime(cards["timestamp"])
+    return cards
+
+
+def _plot_decision_card_markers(ax: plt.Axes, decision_cards: pd.DataFrame | None) -> None:
+    """Добавляет вертикальные отметки карточек решений на график состояния."""
+    if decision_cards is None or decision_cards.empty:
+        return
+
+    colors = {
+        "ml_baseline": "#1f77b4",
+        "conservative_min": "#ff7f0e",
+        "analytic_fallback": "#d62728",
+        "analytic_data_veto": "#9467bd",
+    }
+    used_labels: set[str] = set()
+    for _, row in decision_cards.iterrows():
+        source = str(row.get("rul_source", "decision_card"))
+        label = f"карточка: {source}"
+        ax.axvline(
+            row["timestamp"],
+            color=colors.get(source, "#4b5563"),
+            linestyle=":",
+            linewidth=1.3,
+            alpha=0.85,
+            label=label if label not in used_labels else None,
+        )
+        used_labels.add(label)
+
+
 def _style_time_axis(ax: plt.Axes, title: str, ylabel: str) -> None:
     """Применяет общий стиль к графикам временных рядов."""
     ax.set_title(title)
@@ -289,13 +337,15 @@ def _description() -> str:
             "- `03_perepad_delta_p.png` - наблюдаемый перепад давления с порогами warning/critical и 24-часовым средним.",
             "- `04_zasorenie_clog_level.png` - скрытый уровень засорения фильтра.",
             "- `05_ostatochnyi_resurs_rul.png` - oracle и аналитический остаточный ресурс.",
-            f"- `06_sostoyanie_filtra.png` - raw-состояние и устойчивое состояние по сглаженному `deltaP_norm`, окно {STATE_SMOOTH_HOURS} ч.",
+            f"- `06_sostoyanie_filtra.png` - raw-состояние, устойчивое состояние по сглаженному `deltaP_norm` и вертикальные отметки карточек решений, окно {STATE_SMOOTH_HOURS} ч.",
             "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход и относительную плотность газа, с порогами warning/critical.",
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
             "",
             "На графике состояния исходный `state_obs` оставлен полупрозрачным, а основная линия строится по сглаженному `deltaP_norm`. Краткие `unknown` из-за пропусков показываются как индикатор качества данных, но не ломают устойчивый тренд состояния.",
+            "",
+            "Вертикальные пунктирные линии на графике состояния отмечают временные точки карточек решений, которые выводятся в консоль и `hybrid/decision_cards.md`.",
             "",
         ]
     )

@@ -68,7 +68,7 @@ CANONICAL_DATASET_COLUMNS = [
     "fault_flags",
 ]
 
-LSTM_INPUT_COLUMNS = [
+ML_INPUT_COLUMNS = [
     "P_in_MPa",
     "P_out_MPa",
     "deltaP_kPa",
@@ -78,7 +78,7 @@ LSTM_INPUT_COLUMNS = [
     "deltaP_norm_kPa",
 ]
 
-LSTM_FORBIDDEN_INPUT_COLUMNS = [
+ML_FORBIDDEN_INPUT_COLUMNS = [
     "clog_level",
     "RUL_oracle_h",
     "state",
@@ -234,8 +234,8 @@ def export_run(
         "rows": len(df),
         "columns": list(df.columns),
         "canonical_dataset_columns": CANONICAL_DATASET_COLUMNS,
-        "lstm_input_columns": LSTM_INPUT_COLUMNS,
-        "lstm_forbidden_input_columns": LSTM_FORBIDDEN_INPUT_COLUMNS,
+        "ml_input_columns": ML_INPUT_COLUMNS,
+        "ml_forbidden_input_columns": ML_FORBIDDEN_INPUT_COLUMNS,
         "russian_column_names": RU_COLUMN_NAMES,
         "operation_descriptions": OPERATION_DESCRIPTIONS,
         "config": cfg.model_dump(mode="json"),
@@ -321,7 +321,7 @@ def _operations_markdown() -> str:
 
 
 def _dataset_schema_markdown() -> str:
-    """Формирует документ, который фиксирует контракт датасета и LSTM-входы."""
+    """Формирует документ, который фиксирует контракт датасета и ML-входы."""
     rows = [
         ("timestamp", "datetime", "-", "Временная метка наблюдения."),
         ("filter_id", "string", "-", "Идентификатор фильтра."),
@@ -355,13 +355,13 @@ def _dataset_schema_markdown() -> str:
     lines.extend(
         [
             "",
-            "## Можно подавать на вход LSTM",
+            "## Можно подавать на вход ML-модели",
             "",
-            *[f"- `{column}`" for column in LSTM_INPUT_COLUMNS],
+            *[f"- `{column}`" for column in ML_INPUT_COLUMNS],
             "",
-            "## Нельзя подавать на вход LSTM",
+            "## Нельзя подавать на вход ML-модели",
             "",
-            *[f"- `{column}`" for column in LSTM_FORBIDDEN_INPUT_COLUMNS],
+            *[f"- `{column}`" for column in ML_FORBIDDEN_INPUT_COLUMNS],
             "",
             "`clog_level`, `RUL_oracle_h` и `state` являются скрытыми/целевыми полями симулятора. Их можно использовать как target или для оценки качества, но нельзя включать в признаки входной последовательности.",
             "",

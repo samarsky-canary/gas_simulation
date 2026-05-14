@@ -151,10 +151,15 @@ def format_console_decision_summary(decisions: pd.DataFrame, max_cards: int = 3)
         "",
         "Краткие карточки решений по источникам RUL:",
     ]
-    for _, row in _sample_card_rows(decisions).head(max_cards).iterrows():
+    for _, row in select_decision_card_rows(decisions).head(max_cards).iterrows():
         package = _decision_package(row)
         lines.extend(_console_card_lines(package))
     return "\n".join(lines)
+
+
+def select_decision_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
+    """Возвращает строки, для которых формируются карточки объяснения решений."""
+    return _sample_card_rows(decisions)
 
 
 def _prepare_inputs(
@@ -505,13 +510,11 @@ def _write_decision_packages_jsonl(decisions: pd.DataFrame, path: Path) -> None:
 
 def _decision_cards_markdown(decisions: pd.DataFrame) -> str:
     """Формирует читаемые карточки решений для последних и типовых событий."""
-    sample = _sample_card_rows(decisions)
+    sample = select_decision_card_rows(decisions)
     lines = [
         "# Карточки объяснения решений",
         "",
         "Файл показывает человекочитаемый вид пакета объяснения. Полный машинно-читаемый журнал для каждой временной точки находится в `decision_packages.jsonl`.",
-        "",
-        "В текущей версии `RUL ML baseline` является временным заменителем будущего `RUL LSTM`.",
         "",
     ]
     for _, row in sample.iterrows():
@@ -788,8 +791,6 @@ def _description() -> str:
             "# Гибридная логика принятия решений",
             "",
             "Слой объединяет наблюдаемую телеметрию, признаки качества, ML-прогноз RUL baseline-модели и аналитический RUL.",
-            "",
-            "В текущей версии `RUL_ml_h` используется как временный заменитель будущего `RUL_LSTM_h`. После обучения LSTM можно заменить источник прогноза, сохранив правила fusion и decision layer.",
             "",
             "## Контур",
             "",

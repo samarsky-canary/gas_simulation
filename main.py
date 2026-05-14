@@ -10,7 +10,6 @@ from src.hybrid import (
     export_hybrid_decisions,
     format_console_decision_summary,
 )
-from src.lstm import build_lstm_windows, export_lstm_windows
 from src.ml import train_and_export_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
 from src.simulator.config import load_config
@@ -54,10 +53,6 @@ OUTPUT_LABELS = {
     "hybrid_description": "описание гибридной логики",
     "hybrid_decision_packages_jsonl": "пакеты объяснения решений JSONL",
     "hybrid_decision_cards_md": "карточки объяснения решений Markdown",
-    "lstm_rul_npz": "LSTM окна для RUL",
-    "lstm_state_npz": "LSTM окна для state",
-    "lstm_metadata": "метаданные LSTM-окон",
-    "lstm_description": "описание LSTM-окон",
 }
 
 
@@ -76,9 +71,7 @@ def main() -> None:
     ml_predictions = pd.read_parquet(ml_paths["ml_predictions_parquet"])
     hybrid_decisions = build_hybrid_decisions(cfg, dataset, features, ml_predictions)
     hybrid_paths = export_hybrid_decisions(hybrid_decisions, output_dir)
-    lstm_windows = build_lstm_windows(cfg, dataset)
-    lstm_paths = export_lstm_windows(cfg, lstm_windows, output_dir)
-    plot_paths = build_plots(cfg, df, output_dir)
+    plot_paths = build_plots(cfg, df, output_dir, hybrid_decisions)
 
     print(f"Сгенерировано строк: {len(df)}")
     print(f"Сценарий: {cfg.scenario_name}")
@@ -101,10 +94,6 @@ def main() -> None:
         print(f"- {label}: {path}")
     print("Создана гибридная логика решений:")
     for name, path in hybrid_paths.items():
-        label = OUTPUT_LABELS.get(name, name)
-        print(f"- {label}: {path}")
-    print("Созданы LSTM окна:")
-    for name, path in lstm_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Созданные графики:")
