@@ -85,6 +85,8 @@ Feature builder создает минимальный набор признак�
 - `missing_rate_1h` - доля строк с пропусками за 1 час.
 - `time_above_warn` - накопленное время выше warning-порога после последнего обслуживания.
 
+Обслуживание в симуляторе может быть разовым через `maintenance_day` или периодическим через `maintenance_interval_h`. При событии `maintenance_event = true` скрытый износ `clog_level` сбрасывается до `c_reset`.
+
 В таблицу признаков также добавлены `state_obs`, `state_true`, `rul_oracle_h`, `rul_analytic_h` и `is_rul_unknown`, чтобы один файл можно было использовать для быстрых baseline-экспериментов.
 
 Подробные функции расчета каждого признака вынесены в `docs/feature_calculation_functions.md`.

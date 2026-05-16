@@ -76,7 +76,8 @@ class ScenarioConfig(BaseModel):
     stuck_min_steps: int = Field(default=6, ge=1)                                   # Минимальная длительность зависания датчика в шагах.
     stuck_max_steps: int = Field(default=36, ge=1)                                  # Максимальная длительность зависания датчика в шагах.
 
-    maintenance_day: float | None = None                                            # День обслуживания от начала симуляции; None отключает обслуживание.
+    maintenance_day: float | None = None                                            # День разового обслуживания от начала симуляции; None отключает разовое обслуживание.
+    maintenance_interval_h: float | None = Field(default=None, gt=0)                # Интервал планового обслуживания в часах; None отключает обслуживание по графику.
     c_reset: float = Field(default=0.05, ge=0, le=1)                                # Остаточный уровень засорения после обслуживания от 0 до 1.
 
     schema_version: str = "0.1.0"                                                   # Версия схемы конфигурации и выходных метаданных.
