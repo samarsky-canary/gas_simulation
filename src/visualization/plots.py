@@ -144,59 +144,68 @@ def _plot_rul_comparison(
     path: Path,
 ) -> None:
     """Сравнивает oracle, аналитический, ML и итоговый гибридный RUL."""
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(
+    fig, axes = plt.subplots(4, 1, figsize=(16, 12), sharex=True)
+    axes[0].plot(
         df["timestamp"],
         df["rul_oracle_h"],
-        label="RUL oracle",
+        label="1. RUL oracle",
         color="#4b5563",
         linewidth=1.0,
-        linestyle="--",
     )
-    ax.plot(
+    axes[1].plot(
         df["timestamp"],
         df["rul_analytic_h"],
-        label="RUL аналитический",
+        label="2. RUL аналитический",
         color="#8c564b",
-        linewidth=0.9,
-        alpha=0.85,
+        linewidth=1.0,
     )
 
     if hybrid_decisions is not None and not hybrid_decisions.empty:
         decisions = hybrid_decisions.sort_values("timestamp").copy()
         decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
-        ax.plot(
+        axes[2].plot(
             decisions["timestamp"],
             decisions["RUL_ml_h"],
-            label="RUL ML",
+            label="3. RUL ML",
             color="#1f77b4",
-            linewidth=0.9,
-            alpha=0.85,
+            linewidth=1.0,
         )
-        ax.plot(
+        axes[3].plot(
             decisions["timestamp"],
             decisions["RUL_fused_h"],
-            label="RUL hybrid",
+            label="4. RUL гибрид",
             color="#d62728",
-            linewidth=1.4,
+            linewidth=1.2,
         )
+    else:
+        axes[2].text(0.5, 0.5, "Нет ML-прогноза", transform=axes[2].transAxes, ha="center", va="center")
+        axes[3].text(0.5, 0.5, "Нет гибридного RUL", transform=axes[3].transAxes, ha="center", va="center")
 
-    ax.axhline(
-        cfg.planned_maintenance_rul_h,
-        color="#ffbf00",
-        linestyle="--",
-        linewidth=1.0,
-        label="порог планового ТО",
-    )
-    ax.axhline(
-        cfg.urgent_maintenance_rul_h,
-        color="#7f0000",
-        linestyle="--",
-        linewidth=1.0,
-        label="порог срочного ТО",
-    )
-    ax.legend(loc="best")
-    _style_time_axis(ax, "Сравнение оценок остаточного ресурса RUL(t)", "Остаточный ресурс, ч")
+    for ax in axes:
+        ax.axhline(
+            cfg.planned_maintenance_rul_h,
+            color="#ffbf00",
+            linestyle="--",
+            linewidth=0.8,
+            alpha=0.8,
+            label="порог планового ТО",
+        )
+        ax.axhline(
+            cfg.urgent_maintenance_rul_h,
+            color="#7f0000",
+            linestyle="--",
+            linewidth=0.8,
+            alpha=0.8,
+            label="порог срочного ТО",
+        )
+        ax.set_ylabel("RUL, ч")
+        ax.grid(True, alpha=0.25)
+        ax.legend(loc="best")
+
+    axes[0].set_title("Сравнение оценок остаточного ресурса RUL(t)")
+    axes[-1].set_xlabel("Время")
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    fig.autofmt_xdate()
     _save(fig, path)
 
 

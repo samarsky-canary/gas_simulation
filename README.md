@@ -129,6 +129,8 @@ Feature builder создает минимальный набор признак�
 - `ml_metrics.json`
 - `ml_baseline_report.md`
 
+Подробное описание ML-слоя: `docs/ml_baseline_detailed.md`.
+
 ## Графики
 
 После запуска в `outputs/<scenario_name>/plots/` создаются:
