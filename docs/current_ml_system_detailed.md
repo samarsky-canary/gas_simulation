@@ -591,7 +591,7 @@ feature_description.md
 | `deltaP_norm_kPa` | Нормированный перепад. |
 | `deltaP_roll_mean_1h` | Средний перепад за 1 час. |
 | `deltaP_roll_std_1h` | Стандартное отклонение перепада за 1 час. |
-| `deltaP_slope_6h` | Наклон перепада за 6 часов. |
+| `deltaP_slope_6h` | Наклон нормированного перепада за 6 часов. |
 | `Q_roll_mean_1h` | Средний расход за 1 час. |
 | `missing_rate_1h` | Доля строк с пропусками за 1 час. |
 | `time_above_warn` | Накопленное время выше warning-порога. |
@@ -636,10 +636,10 @@ deltaP_roll_std_1h = rolling_std(delta_p_kpa, window_1h)
 ```text
 window_6h = 6 * 60 / step_minutes
 
-deltaP_slope_6h = OLS_slope(delta_p_kpa ~ time_hours, window_6h)
+deltaP_slope_6h = OLS_slope(deltaP_norm_kPa ~ time_hours, window_6h)
 ```
 
-Смысл: показывает скорость изменения перепада. Если значение положительное, перепад растёт.
+Смысл: показывает скорость изменения нормированного перепада. Если значение положительное, сопротивление фильтра растёт без учёта кратковременного изменения расхода.
 
 #### `Q_roll_mean_1h`
 

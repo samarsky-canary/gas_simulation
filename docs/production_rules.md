@@ -2,6 +2,8 @@
 
 Документ фиксирует продукционные правила текущей версии: пороговый `rule-based baseline` и гибридный `decision layer`. Правила применяются к каждой временной точке телеметрии.
 
+Актуальные реализации находятся в `src/rules/baseline.py` и `src/hybrid/decision_engine.py`. Пороговые значения соответствуют текущему `configs/base.yaml`.
+
 ## 1. Обозначения и пороги
 
 | Обозначение | Поле / параметр | Текущий порог | Смысл |
@@ -9,8 +11,8 @@
 | `delta_p_norm_kpa` | нормированный перепад | - | Перепад давления, очищенный от влияния расхода. |
 | `dp_warn_kpa` | config | `5.0` кПа | Порог предупредительного состояния. |
 | `dp_crit_kpa` | config | `10.0` кПа | Порог критического состояния. |
-| `planned_maintenance_rul_h` | config | `200.0` ч | Горизонт планового обслуживания. |
-| `urgent_maintenance_rul_h` | config | `100.0` ч | Горизонт срочного обслуживания. |
+| `planned_maintenance_rul_h` | config | `72.0` ч | Горизонт планового обслуживания. |
+| `urgent_maintenance_rul_h` | config | `12.0` ч | Горизонт срочного обслуживания. |
 | `p_min_mpa` | config | `0.10` МПа | Минимально допустимое выходное давление. |
 | `confidence_data` | расчет | `0..1` | Доверие к данным. |
 | `confidence_model` | расчет | `0..1` | Доверие к ML-прогнозу. |
@@ -20,6 +22,13 @@
 ## 2. Rule-Based Baseline
 
 Эти правила формируют `rule_state`, `rule_alarm_flag` и `rule_recommendation`.
+
+Порядок применения:
+
+1. Сначала определяется дискретное состояние фильтра.
+2. Затем рассчитывается флаг тревоги.
+3. После этого выбирается рекомендация по обслуживанию.
+4. В конце рассчитывается доверие к rule-based выводу.
 
 ### RB-STATE-001. Неизвестное состояние из-за отсутствующего перепада
 
@@ -135,6 +144,12 @@ rule_recommendation = continue_monitoring
 rul_analytic_h < planned_maintenance_rul_h
 ```
 
+При текущем конфиге:
+
+```text
+rul_analytic_h < 72 ч
+```
+
 ТО:
 
 ```text
@@ -147,6 +162,12 @@ rule_recommendation = planned_maintenance
 
 ```text
 rul_analytic_h < urgent_maintenance_rul_h
+```
+
+При текущем конфиге:
+
+```text
+rul_analytic_h < 12 ч
 ```
 
 ТО:
@@ -208,6 +229,8 @@ data_hard_veto = true
 confidence_data = 0.05
 ```
 
+Если одно из проверяемых физических значений отсутствует, само по себе это не включает жесткое вето.
+
 ### CONF-DATA-002. Базовое доверие по quality_code
 
 ЕСЛИ нет жесткого вето данных, ТО:
@@ -268,6 +291,8 @@ state_pred == state
 confidence_model = confidence_model + 0.10
 ```
 
+Правило применяется только когда доступны оба состояния: `state_pred` и `state`.
+
 ### CONF-MODEL-004. Штраф за расхождение состояния
 
 ЕСЛИ:
@@ -281,6 +306,8 @@ state_pred != state
 ```text
 confidence_model = confidence_model - 0.15
 ```
+
+Правило применяется только когда доступны оба состояния: `state_pred` и `state`.
 
 После бонуса или штрафа:
 
@@ -336,6 +363,8 @@ confidence_total = clip(
 
 Эти правила формируют `RUL_fused_h` и `rul_source`.
 
+Правила проверяются сверху вниз. Первое подходящее правило выбирает итоговый `RUL_fused_h`, задает `rul_source` и добавляет код fusion-правила в `rule_trace`.
+
 ### R-FUSE-000. RUL недоступен
 
 ЕСЛИ:
@@ -367,6 +396,8 @@ RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_data_veto
 ```
 
+В `rule_trace` этот вариант записывается как `R-FUSE-003`.
+
 ### R-FUSE-003. Аналитический fallback при недоступном ML
 
 ЕСЛИ:
@@ -381,6 +412,8 @@ RUL_ml_h is NaN
 RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_fallback
 ```
+
+В `rule_trace` этот вариант записывается как `R-FUSE-003`.
 
 ### R-FUSE-001. Использование ML-прогноза
 
@@ -429,6 +462,8 @@ otherwise
 RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_fallback
 ```
+
+В `rule_trace` этот вариант записывается как `R-FUSE-003`.
 
 ## 5. Продукционные Правила Действий
 
@@ -513,6 +548,8 @@ due_time_h = min(max(RUL_fused_h, 0), urgent_maintenance_rul_h)
 due_time_h = urgent_maintenance_rul_h
 ```
 
+При текущем конфиге fallback-срок равен `12` часам.
+
 ### R-CONS-001. Ручная проверка при сильном расхождении RUL
 
 ЕСЛИ:
@@ -529,6 +566,8 @@ action = manual_review
 priority = P1
 due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
 ```
+
+Если `RUL_fused_h` недоступен, срок берется равным `planned_maintenance_rul_h`, то есть `72` часам.
 
 Объяснение: ML-RUL и аналитический RUL сильно расходятся.
 
@@ -548,6 +587,8 @@ priority = P1
 due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
 ```
 
+Если `RUL_fused_h` недоступен, срок берется равным `planned_maintenance_rul_h`, то есть `72` часам.
+
 Объяснение: общее доверие к решению низкое.
 
 ### R-MNT-003. Срочное обслуживание по итоговому RUL
@@ -566,6 +607,8 @@ priority = P1
 due_time_h = min(max(RUL_fused_h, 0), urgent_maintenance_rul_h)
 ```
 
+При текущем конфиге верхняя граница срока равна `12` часам.
+
 ### R-MNT-002. Плановое обслуживание при warning и малом RUL
 
 ЕСЛИ:
@@ -583,6 +626,8 @@ priority = P2
 due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
 ```
 
+При текущем конфиге верхняя граница срока равна `72` часам.
+
 ### R-MNT-002. Плановое обслуживание по итоговому RUL
 
 ЕСЛИ:
@@ -598,6 +643,8 @@ action = planned_maintenance
 priority = P2
 due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
 ```
+
+При текущем конфиге верхняя граница срока равна `72` часам.
 
 ### R-MNT-001. Продолжение мониторинга
 
@@ -635,6 +682,8 @@ R-EXPL-001
 - сработавшие правила;
 - практическое действие для оператора.
 
+`rule_trace` показывает правила, которые определили итоговое решение: одно правило выбора RUL, одно правило действия и `R-EXPL-001`. Он не хранит полный список всех проверенных условий.
+
 ## 7. Приоритеты действий
 
 | Приоритет | Действия | Смысл |
@@ -643,4 +692,3 @@ R-EXPL-001
 | `P1` | `urgent_maintenance`, `manual_review` | Высокий приоритет: срочное ТО или инженерная проверка. |
 | `P2` | `planned_maintenance` | Плановое обслуживание в пределах расчетного срока. |
 | `P3` | `monitor` | Продолжать штатный мониторинг. |
-

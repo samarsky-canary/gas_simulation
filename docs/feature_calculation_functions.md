@@ -113,7 +113,7 @@ deltaP_roll_std_1h = fillna(deltaP_roll_std_1h, 0.0)
 ```python
 six_hours = window_steps(6)
 deltaP_slope_6h = rolling_apply(
-    delta_p_kpa,
+    deltaP_norm_kPa,
     window=six_hours,
     min_periods=max(3, six_hours // 3),
     function=OLS_slope
@@ -129,7 +129,7 @@ if count(mask) < 2:
     return NaN
 
 x = [0, 1, 2, ...] * dt_h
-y = delta_p_kpa values
+y = deltaP_norm_kPa values
 
 x_centered = x - mean(x)
 denom = dot(x_centered, x_centered)
@@ -143,10 +143,12 @@ slope = dot(x_centered, y - mean(y)) / denom
 Смысл:
 
 ```text
-Скорость изменения перепада давления за 6 часов.
+Скорость изменения нормированного перепада давления за 6 часов.
 ```
 
-Если `deltaP_slope_6h > 0`, перепад растет. Если меньше нуля, перепад снижается. Это не уровень засорения, а локальный тренд.
+Если `deltaP_slope_6h > 0`, нормированный перепад растет. Если меньше нуля, нормированный перепад снижается. Это не уровень засорения, а локальный тренд сопротивления фильтра.
+
+Важно: тренд считается по `deltaP_norm_kPa`, а не по сырому `delta_p_kpa`, чтобы рост расхода сам по себе не выглядел как рост засорения.
 
 Единицы:
 
@@ -567,4 +569,3 @@ rul_oracle_h
 ```text
 Это скрытые или целевые поля. Их можно использовать для обучения как target или для оценки качества, но нельзя подавать как признаки модели.
 ```
-

@@ -34,6 +34,19 @@ def test_delta_p_slope_6h_is_positive_for_increasing_series() -> None:
     assert features["deltaP_slope_6h"].dropna().tail(1).iloc[0] > 0
 
 
+def test_delta_p_slope_6h_uses_normalized_pressure_drop() -> None:
+    cfg = ScenarioConfig(duration_days=1, step_minutes=60, p_missing=0, p_spike=0, p_stuck=0)
+    df, _ = run_scenario(cfg)
+    df = df.copy()
+    flow_factor = (df["q_m3h"] / cfg.q_nominal_m3h) ** cfg.alpha_flow
+    df["delta_p_kpa"] = 5.0 * flow_factor
+    df["quality_code"] = "good"
+
+    features = build_features(cfg, df)
+
+    assert abs(features["deltaP_slope_6h"].dropna().tail(1).iloc[0]) < 1e-10
+
+
 def test_export_features_creates_files(tmp_path) -> None:
     cfg = ScenarioConfig(duration_days=1, step_minutes=30, p_missing=0, p_spike=0, p_stuck=0)
     df, _ = run_scenario(cfg)

@@ -87,9 +87,9 @@ FEATURE_DESCRIPTIONS = [
     },
     {
         "name": "deltaP_slope_6h",
-        "meaning": "Скорость роста перепада на окне 6 часов.",
-        "formula": "OLS slope(deltaP_kPa ~ time_hours, 6h)",
-        "use": "Простой трендовый индикатор для прогноза и правил.",
+        "meaning": "Скорость роста нормированного перепада на окне 6 часов.",
+        "formula": "OLS slope(deltaP_norm_kPa ~ time_hours, 6h)",
+        "use": "Трендовый индикатор роста сопротивления фильтра без влияния режима расхода.",
     },
     {
         "name": "Q_roll_mean_1h",
@@ -128,7 +128,7 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     features["deltaP_roll_std_1h"] = (
         features["delta_p_kpa"].rolling(one_hour, min_periods=1).std().fillna(0.0)
     )
-    features["deltaP_slope_6h"] = features["delta_p_kpa"].rolling(
+    features["deltaP_slope_6h"] = features["deltaP_norm_kPa"].rolling(
         six_hours, min_periods=max(3, six_hours // 3)
     ).apply(lambda values: _slope(values, dt_h), raw=True)
     features["Q_roll_mean_1h"] = features["q_m3h"].rolling(one_hour, min_periods=1).mean()
