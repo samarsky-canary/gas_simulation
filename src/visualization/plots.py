@@ -18,6 +18,21 @@ STATE_TO_CODE = {"unknown": -1, "normal": 0, "warning": 1, "critical": 2}
 STATE_TICKS = [-1, 0, 1, 2]
 STATE_LABELS = ["неизвестно", "норма", "предупреждение", "критическое"]
 STATE_SMOOTH_HOURS = 3
+RUL_SOURCE_COLORS = {
+    "ml_baseline": "#1f77b4",
+    "conservative_min": "#ff7f0e",
+    "analytic_fallback": "#d62728",
+    "analytic_data_veto": "#9467bd",
+    "unavailable": "#6b7280",
+}
+ACTION_COLORS = {
+    "monitor": "#6b7280",
+    "sensor_check": "#9467bd",
+    "planned_maintenance": "#ffbf00",
+    "urgent_maintenance": "#d62728",
+    "shutdown_request": "#111111",
+    "manual_review": "#ff7f0e",
+}
 
 
 def build_plots(
@@ -42,6 +57,9 @@ def build_plots(
         "state": plot_dir / "06_sostoyanie_filtra.png",
         "delta_p_norm": plot_dir / "07_normirovannyi_perepad.png",
         "delta_p_vs_clog": plot_dir / "08_delta_p_i_zasorenie.png",
+        "rul_comparison": plot_dir / "09_sravnenie_rul.png",
+        "hybrid_decision": plot_dir / "10_gibridnoe_reshenie.png",
+        "rul_source_periods": plot_dir / "11_periodi_predpochteniya_rul.png",
         "dashboard": plot_dir / "00_obzornyi_dashboard.png",
         "description": plot_dir / "plots_description.md",
         "diagnostics": plot_dir / "plot_diagnostics.md",
@@ -55,6 +73,9 @@ def build_plots(
     _plot_state(cfg, data, paths["state"], decision_cards)
     _plot_delta_p_norm(cfg, data, paths["delta_p_norm"])
     _plot_delta_p_vs_clog(cfg, data, paths["delta_p_vs_clog"])
+    _plot_rul_comparison(cfg, data, hybrid_decisions, paths["rul_comparison"])
+    _plot_hybrid_decision_window(cfg, data, hybrid_decisions, paths["hybrid_decision"])
+    _plot_rul_source_periods(cfg, hybrid_decisions, paths["rul_source_periods"])
     _plot_dashboard(cfg, data, paths["dashboard"])
     paths["description"].write_text(_description(), encoding="utf-8")
     paths["diagnostics"].write_text(_diagnostics(cfg, data), encoding="utf-8")
@@ -114,6 +135,346 @@ def _plot_rul(df: pd.DataFrame, path: Path) -> None:
     ax.legend(loc="best")
     _style_time_axis(ax, "Остаточный ресурс RUL(t)", "Остаточный ресурс, ч")
     _save(fig, path)
+
+
+def _plot_rul_comparison(
+    cfg: ScenarioConfig,
+    df: pd.DataFrame,
+    hybrid_decisions: pd.DataFrame | None,
+    path: Path,
+) -> None:
+    """Сравнивает oracle, аналитический, ML и итоговый гибридный RUL."""
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(
+        df["timestamp"],
+        df["rul_oracle_h"],
+        label="RUL oracle",
+        color="#4b5563",
+        linewidth=1.0,
+        linestyle="--",
+    )
+    ax.plot(
+        df["timestamp"],
+        df["rul_analytic_h"],
+        label="RUL аналитический",
+        color="#8c564b",
+        linewidth=0.9,
+        alpha=0.85,
+    )
+
+    if hybrid_decisions is not None and not hybrid_decisions.empty:
+        decisions = hybrid_decisions.sort_values("timestamp").copy()
+        decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
+        ax.plot(
+            decisions["timestamp"],
+            decisions["RUL_ml_h"],
+            label="RUL ML",
+            color="#1f77b4",
+            linewidth=0.9,
+            alpha=0.85,
+        )
+        ax.plot(
+            decisions["timestamp"],
+            decisions["RUL_fused_h"],
+            label="RUL hybrid",
+            color="#d62728",
+            linewidth=1.4,
+        )
+
+    ax.axhline(
+        cfg.planned_maintenance_rul_h,
+        color="#ffbf00",
+        linestyle="--",
+        linewidth=1.0,
+        label="порог планового ТО",
+    )
+    ax.axhline(
+        cfg.urgent_maintenance_rul_h,
+        color="#7f0000",
+        linestyle="--",
+        linewidth=1.0,
+        label="порог срочного ТО",
+    )
+    ax.legend(loc="best")
+    _style_time_axis(ax, "Сравнение оценок остаточного ресурса RUL(t)", "Остаточный ресурс, ч")
+    _save(fig, path)
+
+
+def _plot_hybrid_decision_window(
+    cfg: ScenarioConfig,
+    df: pd.DataFrame,
+    hybrid_decisions: pd.DataFrame | None,
+    path: Path,
+) -> None:
+    """Показывает гибридность решения в окне, где появляются сервисные действия."""
+    if hybrid_decisions is None or hybrid_decisions.empty:
+        path.write_text("Нет hybrid_decisions для построения графика.", encoding="utf-8")
+        return
+
+    decisions = hybrid_decisions.sort_values("timestamp").copy()
+    decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
+    window = _hybrid_focus_window(cfg, decisions)
+    view = decisions[
+        decisions["timestamp"].between(window[0], window[1], inclusive="both")
+    ].copy()
+    truth = df[df["timestamp"].between(window[0], window[1], inclusive="both")].copy()
+    if view.empty:
+        view = decisions
+        truth = df
+
+    fig, axes = plt.subplots(
+        4,
+        1,
+        figsize=(16, 13),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.2, 1.0, 1.0]},
+    )
+
+    axes[0].plot(
+        view["timestamp"],
+        view["RUL_ml_h"],
+        label="RUL ML",
+        color="#1f77b4",
+        linewidth=0.9,
+        alpha=0.85,
+    )
+    axes[0].plot(
+        view["timestamp"],
+        view["RUL_analytic_h"],
+        label="RUL аналитический",
+        color="#8c564b",
+        linewidth=0.9,
+        alpha=0.85,
+    )
+    axes[0].plot(
+        view["timestamp"],
+        view["RUL_fused_h"],
+        label="RUL hybrid/fused",
+        color="#d62728",
+        linewidth=1.8,
+    )
+    axes[0].axhline(cfg.planned_maintenance_rul_h, color="#ffbf00", linestyle="--", linewidth=1.0, label="плановое ТО")
+    axes[0].axhline(cfg.urgent_maintenance_rul_h, color="#7f0000", linestyle="--", linewidth=1.0, label="срочное ТО")
+    axes[0].set_ylabel("RUL, ч")
+    axes[0].set_title("Гибридное решение: сравнение RUL, доверия, источника и действия")
+    axes[0].legend(loc="best")
+
+    axes[1].plot(view["timestamp"], view["confidence_data"], label="data", color="#2ca02c", linewidth=0.9)
+    axes[1].plot(view["timestamp"], view["confidence_model"], label="model", color="#1f77b4", linewidth=0.9)
+    axes[1].plot(view["timestamp"], view["confidence_consistency"], label="consistency", color="#ff7f0e", linewidth=0.9)
+    axes[1].plot(view["timestamp"], view["confidence_total"], label="total", color="#111111", linewidth=1.4)
+    axes[1].set_ylim(-0.05, 1.05)
+    axes[1].set_ylabel("confidence")
+    axes[1].legend(loc="best", ncol=4)
+
+    _plot_category_timeline(
+        axes[2],
+        view,
+        column="rul_source",
+        colors=RUL_SOURCE_COLORS,
+        title="Источник итогового RUL",
+    )
+    _plot_category_timeline(
+        axes[3],
+        view,
+        column="action",
+        colors=ACTION_COLORS,
+        title="Итоговое действие",
+    )
+
+    if not truth.empty:
+        critical = truth["state_true"].eq("critical") if "state_true" in truth.columns else pd.Series(False, index=truth.index)
+        if critical.any():
+            first_critical = truth.loc[critical, "timestamp"].iloc[0]
+            for ax in axes:
+                ax.axvline(first_critical, color="#7f0000", linestyle=":", linewidth=1.2, alpha=0.85)
+
+    for ax in axes:
+        ax.grid(True, alpha=0.25)
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
+    fig.autofmt_xdate()
+    _save(fig, path)
+
+
+def _plot_rul_source_periods(
+    cfg: ScenarioConfig,
+    hybrid_decisions: pd.DataFrame | None,
+    path: Path,
+) -> None:
+    """Показывает, в какие периоды итоговый RUL берется из ML, аналитики или минимума."""
+    if hybrid_decisions is None or hybrid_decisions.empty:
+        path.write_text("Нет hybrid_decisions для построения графика.", encoding="utf-8")
+        return
+
+    decisions = hybrid_decisions.sort_values("timestamp").copy()
+    decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(16, 11),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.6, 1.1, 1.1]},
+    )
+
+    axes[0].plot(
+        decisions["timestamp"],
+        decisions["RUL_ml_h"],
+        label="RUL ML",
+        color="#1f77b4",
+        linewidth=0.8,
+        alpha=0.75,
+    )
+    axes[0].plot(
+        decisions["timestamp"],
+        decisions["RUL_analytic_h"],
+        label="RUL аналитический",
+        color="#8c564b",
+        linewidth=0.8,
+        alpha=0.75,
+    )
+    axes[0].plot(
+        decisions["timestamp"],
+        decisions["RUL_fused_h"],
+        label="RUL итоговый",
+        color="#d62728",
+        linewidth=1.5,
+    )
+    axes[0].axhline(cfg.planned_maintenance_rul_h, color="#ffbf00", linestyle="--", linewidth=1.0, label="плановое ТО")
+    axes[0].axhline(cfg.urgent_maintenance_rul_h, color="#7f0000", linestyle="--", linewidth=1.0, label="срочное ТО")
+    axes[0].set_ylabel("RUL, ч")
+    axes[0].set_title("Периоды предпочтения источника RUL")
+    axes[0].legend(loc="best")
+
+    _plot_source_bands(axes[1], decisions)
+    axes[1].set_ylabel("Источник RUL")
+
+    axes[2].plot(
+        decisions["timestamp"],
+        decisions["confidence_total"],
+        label="confidence_total",
+        color="#111111",
+        linewidth=1.1,
+    )
+    axes[2].plot(
+        decisions["timestamp"],
+        decisions["confidence_consistency"],
+        label="confidence_consistency",
+        color="#ff7f0e",
+        linewidth=0.9,
+        alpha=0.8,
+    )
+    axes[2].axhline(0.65, color="#1f77b4", linestyle=":", linewidth=1.0, label="порог выбора ML")
+    axes[2].axhline(0.30, color="#d62728", linestyle=":", linewidth=1.0, label="порог conservative_min")
+    axes[2].set_ylim(-0.05, 1.05)
+    axes[2].set_ylabel("confidence")
+    axes[2].legend(loc="best", ncol=4)
+
+    for ax in axes:
+        ax.grid(True, alpha=0.25)
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    fig.autofmt_xdate()
+    _save(fig, path)
+
+
+def _plot_source_bands(ax: plt.Axes, decisions: pd.DataFrame) -> None:
+    """Рисует непрерывные цветные интервалы выбора источника RUL."""
+    sources = [source for source in RUL_SOURCE_COLORS if source in set(decisions["rul_source"].astype(str))]
+    if not sources:
+        sources = sorted(decisions["rul_source"].dropna().astype(str).unique())
+    positions = {source: index for index, source in enumerate(sources)}
+    used_labels: set[str] = set()
+
+    for source, start, end in _source_intervals(decisions):
+        position = positions.get(source)
+        if position is None:
+            continue
+        label = source if source not in used_labels else None
+        ax.fill_between(
+            [start, end],
+            position - 0.35,
+            position + 0.35,
+            color=RUL_SOURCE_COLORS.get(source, "#4b5563"),
+            alpha=0.75,
+            step="post",
+            label=label,
+        )
+        used_labels.add(source)
+
+    ax.set_yticks(list(positions.values()))
+    ax.set_yticklabels(list(positions.keys()))
+    ax.set_ylim(-0.75, max(positions.values(), default=0) + 0.75)
+    ax.legend(loc="best", ncol=3)
+
+
+def _source_intervals(decisions: pd.DataFrame) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
+    """Сворачивает последовательность строк в интервалы с одинаковым `rul_source`."""
+    if decisions.empty:
+        return []
+    rows = decisions[["timestamp", "rul_source"]].reset_index(drop=True)
+    intervals: list[tuple[str, pd.Timestamp, pd.Timestamp]] = []
+    current_source = str(rows.loc[0, "rul_source"])
+    start = rows.loc[0, "timestamp"]
+
+    for index in range(1, len(rows)):
+        source = str(rows.loc[index, "rul_source"])
+        if source == current_source:
+            continue
+        end = rows.loc[index - 1, "timestamp"]
+        intervals.append((current_source, start, end))
+        current_source = source
+        start = rows.loc[index, "timestamp"]
+    intervals.append((current_source, start, rows.loc[len(rows) - 1, "timestamp"]))
+    return intervals
+
+
+def _hybrid_focus_window(
+    cfg: ScenarioConfig, decisions: pd.DataFrame
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Выбирает окно вокруг первых значимых сервисных решений, чтобы график не был сжат 90 днями."""
+    significant = decisions[
+        decisions["action"].isin(["planned_maintenance", "urgent_maintenance", "shutdown_request"])
+        | decisions["RUL_fused_h"].lt(cfg.planned_maintenance_rul_h)
+    ]
+    if significant.empty:
+        start = decisions["timestamp"].min()
+        end = decisions["timestamp"].max()
+        return start, end
+    center = significant["timestamp"].iloc[0]
+    start = max(decisions["timestamp"].min(), center - pd.Timedelta(days=3))
+    end = min(decisions["timestamp"].max(), center + pd.Timedelta(days=4))
+    return start, end
+
+
+def _plot_category_timeline(
+    ax: plt.Axes,
+    data: pd.DataFrame,
+    *,
+    column: str,
+    colors: dict[str, str],
+    title: str,
+) -> None:
+    """Рисует категориальный ряд как цветные точки, чтобы были видны переключения правил."""
+    categories = [category for category in colors if category in set(data[column].astype(str))]
+    if not categories:
+        categories = sorted(data[column].dropna().astype(str).unique())
+    positions = {category: index for index, category in enumerate(categories)}
+    for category in categories:
+        subset = data[data[column].astype(str).eq(category)]
+        if subset.empty:
+            continue
+        ax.scatter(
+            subset["timestamp"],
+            [positions[category]] * len(subset),
+            s=8,
+            color=colors.get(category, "#4b5563"),
+            label=category,
+            alpha=0.75,
+        )
+    ax.set_yticks(list(positions.values()))
+    ax.set_yticklabels(list(positions.keys()))
+    ax.set_ylabel(title)
+    ax.legend(loc="best", ncol=3, markerscale=2)
 
 
 def _plot_state(
@@ -340,8 +701,13 @@ def _description() -> str:
             f"- `06_sostoyanie_filtra.png` - raw-состояние, устойчивое состояние по сглаженному `deltaP_norm` и вертикальные отметки карточек решений, окно {STATE_SMOOTH_HOURS} ч.",
             "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход, с порогами warning/critical.",
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
+            "- `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL с порогами обслуживания.",
+            "- `10_gibridnoe_reshenie.png` - репрезентативное окно принятия решения: ML/analytic/fused RUL, confidence, источник RUL и действие.",
+            "- `11_periodi_predpochteniya_rul.png` - полный временной ряд: в какие периоды итоговый RUL берется из ML, аналитики, conservative min или fallback.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
+            "",
+            "Гибридность системы лучше всего смотреть на `10_gibridnoe_reshenie.png`: там видно, что итоговый RUL не является одной моделью, а выбирается из ML, аналитики или консервативного минимума с учетом confidence и качества данных.",
             "",
             "На графике состояния исходный `state_obs` оставлен полупрозрачным, а основная линия строится по сглаженному `deltaP_norm`. Краткие `unknown` из-за пропусков показываются как индикатор качества данных, но не ломают устойчивый тренд состояния.",
             "",

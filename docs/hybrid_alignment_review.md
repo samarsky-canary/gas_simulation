@@ -24,7 +24,7 @@
 ## Что проверено методически
 
 1. Датасет имеет фиксированный контракт колонок:
-   `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`.
+   `run_id`, `timestamp`, `filter_id`, `scenario`, `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `clog_level`, `deltaP_norm_kPa`, `state`, `RUL_oracle_h`, `RUL_analytic_h`, `quality_code`.
 2. Входы ML-моделей ограничены наблюдаемыми и производными признаками:
    `P_in_MPa`, `P_out_MPa`, `deltaP_kPa`, `Q_m3h`, `T_C`, `deltaP_norm_kPa` и признаки feature builder.
 3. Скрытые и целевые переменные не используются как входы:
@@ -33,6 +33,7 @@
    `deltaP_kPa / max((Q / Q_nominal)^alpha_flow, eps)`.
 5. `state`, `RUL_oracle_h`, `RUL_analytic_h` и rule-based baseline опираются на нормированный перепад, а не на сырой `deltaP_kPa`.
 6. Гибридный слой учитывает качество данных, согласованность ML и аналитического RUL, итоговое доверие и правила безопасности.
+7. ML baseline обучается на корпусе из нескольких независимых `run_id`, а test состоит из других seed основных сценариев и стресс-сценариев качества данных.
 
 ## Реализованные блоки
 

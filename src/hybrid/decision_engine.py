@@ -165,26 +165,31 @@ def _prepare_inputs(
     data["timestamp"] = pd.to_datetime(data["timestamp"])
 
     feature_columns = [
-        "timestamp",
         "deltaP_roll_mean_1h",
         "deltaP_slope_6h",
         "missing_rate_1h",
         "time_above_warn",
     ]
-    existing_features = [column for column in feature_columns if column in features.columns]
+    feature_keys = ["timestamp"]
+    if "run_id" in data.columns and "run_id" in features.columns:
+        feature_keys = ["run_id", "timestamp"]
+    existing_features = [*feature_keys, *[column for column in feature_columns if column in features.columns]]
     if existing_features:
         feature_data = features[existing_features].copy()
         feature_data["timestamp"] = pd.to_datetime(feature_data["timestamp"])
-        data = data.merge(feature_data, on="timestamp", how="left")
+        data = data.merge(feature_data, on=feature_keys, how="left")
     for column in feature_columns:
         if column != "timestamp" and column not in data.columns:
             data[column] = np.nan
 
-    prediction_columns = ["timestamp", "RUL_pred_h", "state_pred"]
+    prediction_keys = ["timestamp"]
+    if "run_id" in data.columns and "run_id" in ml_predictions.columns:
+        prediction_keys = ["run_id", "timestamp"]
+    prediction_columns = [*prediction_keys, "RUL_pred_h", "state_pred"]
     existing_predictions = [column for column in prediction_columns if column in ml_predictions.columns]
     predictions = ml_predictions[existing_predictions].copy()
     predictions["timestamp"] = pd.to_datetime(predictions["timestamp"])
-    data = data.merge(predictions, on="timestamp", how="left")
+    data = data.merge(predictions, on=prediction_keys, how="left")
     data = data.rename(columns={"RUL_pred_h": "RUL_ml_h"})
 
     if "RUL_ml_h" not in data.columns:

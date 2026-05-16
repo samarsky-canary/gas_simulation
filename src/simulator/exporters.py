@@ -48,6 +48,7 @@ TRUTH_COLUMNS = [
 ]
 
 CANONICAL_DATASET_COLUMNS = [
+    "run_id",
     "timestamp",
     "filter_id",
     "scenario",
@@ -201,7 +202,7 @@ def export_run(
         "dataset_schema": output_dir / "dataset_schema.md",
     }
 
-    dataset = _canonical_dataset(cfg, df)
+    dataset = build_canonical_dataset(cfg, df)
     raw.to_csv(paths["raw_observed_csv"], index=False, encoding="utf-8")
     raw.to_parquet(paths["raw_observed_parquet"], index=False)
     truth.to_csv(paths["truth_labels_csv"], index=False, encoding="utf-8")
@@ -246,7 +247,7 @@ def export_run(
     return paths
 
 
-def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
+def build_canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Собирает зафиксированный датасет с внешними именами колонок для CSV/Parquet."""
     # Для упрощенной модели нормируем перепад только по расходу.
     delta_p_norm = df["delta_p_kpa"] / (
@@ -254,6 +255,7 @@ def _canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     )
     dataset = pd.DataFrame(
         {
+            "run_id": df["run_id"],
             "timestamp": df["timestamp"],
             "filter_id": df["filter_id"],
             "scenario": df["scenario_id"],
@@ -307,6 +309,7 @@ def _operations_markdown() -> str:
 def _dataset_schema_markdown() -> str:
     """Формирует документ, который фиксирует контракт датасета и ML-входы."""
     rows = [
+        ("run_id", "string", "-", "Идентификатор синтетического прогона."),
         ("timestamp", "datetime", "-", "Временная метка наблюдения."),
         ("filter_id", "string", "-", "Идентификатор фильтра."),
         ("scenario", "string", "-", "Имя сценария генерации."),

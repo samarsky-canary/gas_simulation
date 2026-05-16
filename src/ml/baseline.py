@@ -32,6 +32,7 @@ ML_INPUT_COLUMNS = [
 ]
 
 ML_OUTPUT_COLUMNS = [
+    "run_id",
     "timestamp",
     "filter_id",
     "scenario",
@@ -44,14 +45,17 @@ ML_OUTPUT_COLUMNS = [
 
 
 def train_and_export_ml_baseline(
-    dataset: pd.DataFrame, output_dir: Path, features: pd.DataFrame | None = None
+    dataset: pd.DataFrame,
+    output_dir: Path,
+    features: pd.DataFrame | None = None,
+    test_run_ids: set[str] | None = None,
 ) -> dict[str, Path]:
     """Обучает RandomForest-бейзлайны для RUL и state и сохраняет метрики/предсказания."""
     ml_dir = output_dir / "ml_baseline"
     ml_dir.mkdir(parents=True, exist_ok=True)
 
     prepared = _prepare_dataset(_attach_features(dataset, features))
-    train_mask = _time_split_mask(prepared, train_share=0.70)
+    train_mask, split_info = _split_mask(prepared, train_share=0.70, test_run_ids=test_run_ids)
 
     regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
     classifier, cls_metrics = _train_state_classifier(prepared, train_mask)
@@ -72,12 +76,7 @@ def train_and_export_ml_baseline(
 
     metrics = {
         "input_columns": ML_INPUT_COLUMNS,
-        "split": {
-            "type": "time_ordered",
-            "train_share": 0.70,
-            "train_rows": int(train_mask.sum()),
-            "test_rows": int((~train_mask).sum()),
-        },
+        "split": split_info,
         "rul_regressor": reg_metrics,
         "state_classifier": cls_metrics,
     }
@@ -90,9 +89,15 @@ def train_and_export_ml_baseline(
 
 def _prepare_dataset(dataset: pd.DataFrame) -> pd.DataFrame:
     """Оставляет только строки с валидными ML-входами и сортирует ряд по времени."""
-    data = dataset.sort_values("timestamp").copy()
+    sort_columns = ["run_id", "timestamp"] if "run_id" in dataset.columns else ["timestamp"]
+    data = dataset.sort_values(sort_columns).copy()
     data["timestamp"] = pd.to_datetime(data["timestamp"])
-    data[ML_INPUT_COLUMNS] = data[ML_INPUT_COLUMNS].ffill().bfill()
+    if "run_id" in data.columns:
+        data[ML_INPUT_COLUMNS] = data.groupby("run_id")[ML_INPUT_COLUMNS].transform(
+            lambda column: column.ffill().bfill()
+        )
+    else:
+        data[ML_INPUT_COLUMNS] = data[ML_INPUT_COLUMNS].ffill().bfill()
     return data.dropna(subset=ML_INPUT_COLUMNS)
 
 
@@ -105,7 +110,6 @@ def _attach_features(dataset: pd.DataFrame, features: pd.DataFrame | None) -> pd
         return dataset
 
     feature_columns = [
-        "timestamp",
         "deltaP_roll_mean_1h",
         "deltaP_roll_std_1h",
         "deltaP_slope_6h",
@@ -113,9 +117,27 @@ def _attach_features(dataset: pd.DataFrame, features: pd.DataFrame | None) -> pd
         "missing_rate_1h",
         "time_above_warn",
     ]
-    existing = [column for column in feature_columns if column in features.columns]
-    merged = dataset.merge(features[existing], on="timestamp", how="left")
+    merge_keys = ["timestamp"]
+    if "run_id" in dataset.columns and "run_id" in features.columns:
+        merge_keys = ["run_id", "timestamp"]
+    existing = [*merge_keys, *[column for column in feature_columns if column in features.columns]]
+    merged = dataset.merge(features[existing], on=merge_keys, how="left")
     return merged
+
+
+def _split_mask(
+    data: pd.DataFrame, train_share: float, test_run_ids: set[str] | None = None
+) -> tuple[pd.Series, dict[str, object]]:
+    """Выбирает train/test split: по run_id для корпуса прогонов, иначе по времени."""
+    if "run_id" in data.columns and data["run_id"].nunique() > 1:
+        return _run_id_split_mask(data, train_share=train_share, test_run_ids=test_run_ids)
+    mask = _time_split_mask(data, train_share=train_share)
+    return mask, {
+        "type": "time_ordered",
+        "train_share": train_share,
+        "train_rows": int(mask.sum()),
+        "test_rows": int((~mask).sum()),
+    }
 
 
 def _time_split_mask(data: pd.DataFrame, train_share: float) -> pd.Series:
@@ -126,9 +148,38 @@ def _time_split_mask(data: pd.DataFrame, train_share: float) -> pd.Series:
     return pd.Series(mask, index=data.index)
 
 
+def _run_id_split_mask(
+    data: pd.DataFrame, train_share: float, test_run_ids: set[str] | None = None
+) -> tuple[pd.Series, dict[str, object]]:
+    """Делит датасет по целым независимым прогонам, чтобы не смешивать соседние точки."""
+    all_run_ids = sorted(str(run_id) for run_id in data["run_id"].dropna().unique())
+    if test_run_ids:
+        selected_test = sorted(set(test_run_ids) & set(all_run_ids))
+    else:
+        test_count = max(1, int(round(len(all_run_ids) * (1.0 - train_share))))
+        selected_test = all_run_ids[-test_count:]
+    selected_train = [run_id for run_id in all_run_ids if run_id not in selected_test]
+    if not selected_train or not selected_test:
+        mask = _time_split_mask(data, train_share=train_share)
+        return mask, {
+            "type": "time_ordered_fallback",
+            "train_share": train_share,
+            "train_rows": int(mask.sum()),
+            "test_rows": int((~mask).sum()),
+        }
+    mask = ~data["run_id"].astype(str).isin(selected_test)
+    return mask, {
+        "type": "group_by_run_id",
+        "train_run_ids": selected_train,
+        "test_run_ids": selected_test,
+        "train_rows": int(mask.sum()),
+        "test_rows": int((~mask).sum()),
+    }
+
+
 def _train_rul_regressor(
     data: pd.DataFrame, train_mask: pd.Series
-) -> tuple[RandomForestRegressor, dict[str, float | int]]:
+) -> tuple[RandomForestRegressor, dict[str, object]]:
     """Обучает RandomForestRegressor предсказывать oracle-RUL по наблюдаемым признакам."""
     target = "RUL_oracle_h"
     valid = data[target].notna()
@@ -143,15 +194,15 @@ def _train_rul_regressor(
     )
     model.fit(train[ML_INPUT_COLUMNS], train[target])
     pred = model.predict(test[ML_INPUT_COLUMNS])
-    rmse = float(np.sqrt(mean_squared_error(test[target], pred)))
-    return model, {
+    metrics = {
         "target": target,
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
-        "mae_h": float(mean_absolute_error(test[target], pred)),
-        "rmse_h": rmse,
-        "r2": float(r2_score(test[target], pred)),
+        **_regression_metrics(test[target], pred),
     }
+    metrics["by_run_id"] = _regression_group_metrics(test, pred, target, "run_id")
+    metrics["by_scenario"] = _regression_group_metrics(test, pred, target, "scenario")
+    return model, metrics
 
 
 def _train_state_classifier(
@@ -172,7 +223,7 @@ def _train_state_classifier(
     )
     model.fit(train[ML_INPUT_COLUMNS], train[target])
     pred = model.predict(test[ML_INPUT_COLUMNS])
-    return model, {
+    metrics = {
         "target": target,
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
@@ -181,6 +232,63 @@ def _train_state_classifier(
             test[target], pred, output_dict=True, zero_division=0
         ),
     }
+    metrics["by_run_id"] = _classification_group_metrics(test, pred, target, "run_id")
+    metrics["by_scenario"] = _classification_group_metrics(test, pred, target, "scenario")
+    return model, metrics
+
+
+def _regression_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float | None]:
+    """Считает основные метрики регрессии RUL и безопасно обрабатывает маленькие группы."""
+    if len(y_true) == 0:
+        return {"mae_h": None, "rmse_h": None, "r2": None}
+    result: dict[str, float | None] = {
+        "mae_h": float(mean_absolute_error(y_true, y_pred)),
+        "rmse_h": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "r2": None,
+    }
+    if len(y_true) >= 2:
+        result["r2"] = float(r2_score(y_true, y_pred))
+    return result
+
+
+def _regression_group_metrics(
+    test: pd.DataFrame, y_pred: np.ndarray, target: str, group_column: str
+) -> list[dict[str, object]]:
+    """Считает RUL-метрики отдельно по run_id или scenario."""
+    if group_column not in test.columns or len(test) == 0:
+        return []
+    scored = test[[group_column, target]].copy()
+    scored["prediction"] = y_pred
+    rows: list[dict[str, object]] = []
+    for group_value, group in scored.groupby(group_column, sort=True):
+        rows.append(
+            {
+                group_column: str(group_value),
+                "rows": int(len(group)),
+                **_regression_metrics(group[target], group["prediction"].to_numpy()),
+            }
+        )
+    return rows
+
+
+def _classification_group_metrics(
+    test: pd.DataFrame, y_pred: np.ndarray, target: str, group_column: str
+) -> list[dict[str, object]]:
+    """Считает accuracy классификатора отдельно по run_id или scenario."""
+    if group_column not in test.columns or len(test) == 0:
+        return []
+    scored = test[[group_column, target]].copy()
+    scored["prediction"] = y_pred
+    rows: list[dict[str, object]] = []
+    for group_value, group in scored.groupby(group_column, sort=True):
+        rows.append(
+            {
+                group_column: str(group_value),
+                "rows": int(len(group)),
+                "accuracy": float(accuracy_score(group[target], group["prediction"])),
+            }
+        )
+    return rows
 
 
 def _build_predictions(
@@ -193,6 +301,7 @@ def _build_predictions(
     result = pd.DataFrame(
         {
             "timestamp": data["timestamp"],
+            "run_id": data["run_id"] if "run_id" in data.columns else "",
             "filter_id": data["filter_id"],
             "scenario": data["scenario"],
             "split": np.where(train_mask, "train", "test"),
@@ -209,6 +318,23 @@ def _report_markdown(metrics: dict[str, object]) -> str:
     """Генерирует краткий отчет для магистерской работы: входы, split и метрики."""
     rul = metrics["rul_regressor"]
     cls = metrics["state_classifier"]
+    split = metrics["split"]
+    split_lines = [
+        "## Split",
+        "",
+        f"- Тип: `{split['type']}`.",
+    ]
+    if "train_run_ids" in split:
+        split_lines.append(f"- Train run_id: `{', '.join(split['train_run_ids'])}`.")
+    if "test_run_ids" in split:
+        split_lines.append(f"- Test run_id: `{', '.join(split['test_run_ids'])}`.")
+    split_lines.extend(
+        [
+            f"- Train: `{split['train_rows']}` строк.",
+            f"- Test: `{split['test_rows']}` строк.",
+            "",
+        ]
+    )
     return "\n".join(
         [
             "# ML baseline",
@@ -224,21 +350,56 @@ def _report_markdown(metrics: dict[str, object]) -> str:
             "",
             "Скрытые и целевые поля `clog_level`, `RUL_oracle_h`, `state` не используются как входы.",
             "",
-            "## Split",
-            "",
-            f"- Тип: `{metrics['split']['type']}`.",
-            f"- Train: `{metrics['split']['train_rows']}` строк.",
-            f"- Test: `{metrics['split']['test_rows']}` строк.",
-            "",
+            *split_lines,
             "## RUL regression",
             "",
-            f"- MAE: `{rul['mae_h']:.3f}` ч.",
-            f"- RMSE: `{rul['rmse_h']:.3f}` ч.",
-            f"- R2: `{rul['r2']:.3f}`.",
+            f"- MAE: `{_fmt_metric(rul['mae_h'])}` ч.",
+            f"- RMSE: `{_fmt_metric(rul['rmse_h'])}` ч.",
+            f"- R2: `{_fmt_metric(rul['r2'])}`.",
+            "",
+            "### RUL по сценариям",
+            "",
+            *_regression_markdown_rows(rul.get("by_scenario", []), "scenario"),
             "",
             "## State classification",
             "",
             f"- Accuracy: `{cls['accuracy']:.3f}`.",
             "",
+            "### State accuracy по сценариям",
+            "",
+            *_classification_markdown_rows(cls.get("by_scenario", []), "scenario"),
+            "",
         ]
     )
+
+
+def _regression_markdown_rows(rows: object, key: str) -> list[str]:
+    """Форматирует групповые RUL-метрики для markdown-отчета."""
+    if not rows:
+        return ["- Нет групповых метрик."]
+    return [
+        (
+            f"- `{row[key]}`: rows=`{row['rows']}`, "
+            f"MAE=`{_fmt_metric(row['mae_h'])}` ч, "
+            f"RMSE=`{_fmt_metric(row['rmse_h'])}` ч, "
+            f"R2=`{_fmt_metric(row['r2'])}`."
+        )
+        for row in rows
+    ]
+
+
+def _classification_markdown_rows(rows: object, key: str) -> list[str]:
+    """Форматирует групповые метрики классификации для markdown-отчета."""
+    if not rows:
+        return ["- Нет групповых метрик."]
+    return [
+        f"- `{row[key]}`: rows=`{row['rows']}`, accuracy=`{_fmt_metric(row['accuracy'])}`."
+        for row in rows
+    ]
+
+
+def _fmt_metric(value: object) -> str:
+    """Форматирует числовую метрику или пустое значение."""
+    if value is None or pd.isna(value):
+        return "н/д"
+    return f"{float(value):.3f}"

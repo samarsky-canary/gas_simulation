@@ -264,15 +264,16 @@ T_true(t) = T_nominal
 
 ```text
 dt_h = step_minutes / 60
-load(t) = max(Q_true(t), 0) / Q_nominal
-load_factor(t) = load(t) ^ gamma_load
+load(t) = (max(Q_true(t), 0) / Q_nominal) ^ gamma_load
 
 clog(t+1) = clip(
-  clog(t) + k_s_per_hour * load_factor(t) * dt_h,
+  clog(t) + k_s_per_hour * load(t) * dt_h,
   0,
   1
 )
 ```
+
+Здесь `load(t)` уже включает степень `gamma_load`.
 
 Если задан `maintenance_day`, то в соответствующей точке:
 
@@ -521,6 +522,7 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 
 | Колонка | Источник | Можно ли подавать в ML | Смысл |
 |---|---|---:|---|
+| `run_id` | runner | нет, служебная | Идентификатор синтетического прогона. |
 | `timestamp` | timebase | нет, служебная | Время наблюдения. |
 | `filter_id` | config | нет, служебная | Фильтр. |
 | `scenario` | config | нет, служебная | Сценарий. |
@@ -835,31 +837,40 @@ RUL_oracle_h
 ML baseline запускается так:
 
 ```python
-ml_paths = train_and_export_ml_baseline(dataset, output_dir, features)
+ml_paths = train_and_export_ml_baseline(
+    ml_dataset,
+    output_dir,
+    ml_features,
+    test_run_ids={holdout_run_id},
+)
 ```
 
 ### 9.1. Подготовка данных
 
-1. Канонический `dataset` объединяется с признаками feature builder по `timestamp`.
-2. Данные сортируются по времени.
-3. Входные признаки заполняются:
+1. Для ML создаётся корпус из нескольких независимых синтетических прогонов.
+2. Каждый прогон получает свой `run_id`, сценарий и seed.
+3. Канонический `dataset` объединяется с признаками feature builder по `run_id` и `timestamp`.
+4. Данные сортируются по `run_id` и времени.
+5. Входные признаки заполняются внутри каждого `run_id`:
 
 ```text
 ffill().bfill()
 ```
 
-4. Строки без входных признаков удаляются.
+6. Строки без входных признаков удаляются.
 
 ### 9.2. Train/test split
 
-Разбиение временное, без перемешивания:
+Основное разбиение выполняется по целым независимым прогонам:
 
 ```text
-train = первые 70% строк
-test = последние 30% строк
+train = основные сценарии с train-seed
+test = основные сценарии с другими seed + stress-test сценарии
 ```
 
-Это важно: будущие точки не должны попадать в обучение для прошлых точек.
+В текущей конфигурации train строится по сценариям `slow_clogging`, `rapid_clogging`, `flow_spikes`, `maintenance_reset` с seed `7`, `13`, `21`. Test строится по тем же основным сценариям с seed `42`, `101`, а также по стресс-сценариям `sensor_bias`, `sensor_stuck`, `missing_data` с seed `42`.
+
+Это нужно, чтобы модель видела полный диапазон RUL на обучающих траекториях и проверялась на независимых траекториях, а не на соседних точках того же ряда. Если в данных только один `run_id`, код использует временной split как fallback.
 
 ### 9.3. RUL-регрессор
 
@@ -940,6 +951,7 @@ ml_baseline/ml_predictions.parquet
 
 | Колонка | Смысл |
 |---|---|
+| `run_id` | Идентификатор прогона. |
 | `timestamp` | Время. |
 | `filter_id` | Фильтр. |
 | `scenario` | Сценарий. |

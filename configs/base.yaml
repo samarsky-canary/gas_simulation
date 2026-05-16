@@ -92,11 +92,11 @@ dp_crit_kpa: 10.0
 
 # Плановый горизонт обслуживания в часах.
 # Если итоговый RUL ниже этого значения, правила могут назначить planned_maintenance.
-planned_maintenance_rul_h: 200
+planned_maintenance_rul_h: 72
 
 # Срочный горизонт обслуживания в часах.
 # Если итоговый RUL ниже этого значения, правила могут назначить urgent_maintenance.
-urgent_maintenance_rul_h: 100
+urgent_maintenance_rul_h: 12
 
 # -----------------------------
 # Деградация фильтра

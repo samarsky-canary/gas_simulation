@@ -35,6 +35,7 @@
 
 Основной фиксированный формат находится в `dataset.csv` и `dataset.parquet`:
 
+- `run_id`
 - `timestamp`
 - `filter_id`
 - `scenario`
@@ -86,6 +87,9 @@ Feature builder создает минимальный набор признак�
 
 В таблицу признаков также добавлены `state_obs`, `state_true`, `rul_oracle_h`, `rul_analytic_h` и `is_rul_unknown`, чтобы один файл можно было использовать для быстрых baseline-экспериментов.
 
+Подробные функции расчета каждого признака вынесены в `docs/feature_calculation_functions.md`.
+Функции расчета сырых наблюдаемых метрик описаны в `docs/raw_metric_calculation_functions.md`.
+
 ## Rule-Based Baseline
 
 Правила состояния:
@@ -108,7 +112,9 @@ Feature builder создает минимальный набор признак�
 
 - `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
 - `RandomForestClassifier` классифицирует `state`.
-- Split временной: первые 70% строк идут в train, последние 30% в test.
+- Для ML генерируется корпус из нескольких независимых `run_id` с разными `scenario_name` и `seed`.
+- Split выполняется по `run_id`: train содержит одни seed, test содержит другие seed тех же сценариев и стресс-сценарии `sensor_bias`, `sensor_stuck`, `missing_data`.
+- В отчете сохраняются общие метрики и разрезы качества по сценариям.
 - Входы: разрешенные наблюдаемые поля плюс инженерные признаки feature builder.
 - Скрытые и целевые поля `clog_level`, `RUL_oracle_h`, `state` не используются как входы.
 
@@ -134,6 +140,9 @@ Feature builder создает минимальный набор признак�
 - `06_sostoyanie_filtra.png` - состояние фильтра `state(t)`.
 - `07_normirovannyi_perepad.png` - нормированный перепад `deltaP_norm(t)`.
 - `08_delta_p_i_zasorenie.png` - сравнение `deltaP(t)` и `clog_level(t)`.
+- `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL.
+- `10_gibridnoe_reshenie.png` - окно принятия гибридного решения: RUL, confidence, источник RUL и действие.
+- `11_periodi_predpochteniya_rul.png` - периоды, когда система предпочитает ML, аналитику или conservative min.
 - `plot_diagnostics.md` - численная проверка связи `deltaP` и `clog_level`.
 
 Для оценки модели важно смотреть не только сырой `deltaP`, но и его 24-часовое среднее и `deltaP_norm`: сырой перепад реагирует на расход, поэтому может быть шумным даже при корректном росте засорения.
