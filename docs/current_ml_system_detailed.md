@@ -30,7 +30,7 @@ configs/base.yaml
 3. Экспортирует наблюдаемые данные, скрытые метки, debug-таблицу и фиксированный датасет.
 4. Строит признаки feature builder.
 5. Строит rule-based baseline.
-6. Обучает классические ML baseline-модели RandomForest.
+6. Обучает классическую ML baseline-модель RandomForest для RUL.
 7. Передаёт датасет, признаки и ML-предсказания в рекомендательный слой.
 8. Строит графики.
 9. Печатает в консоль список созданных файлов и краткую сводку решений.
@@ -905,47 +905,7 @@ n_jobs = -1
 - RMSE в часах;
 - R2.
 
-### 9.4. State-классификатор
-
-Модель:
-
-```text
-RandomForestClassifier
-```
-
-Параметры:
-
-```text
-n_estimators = 120
-max_depth = 12
-min_samples_leaf = 5
-class_weight = balanced
-random_state = 42
-n_jobs = -1
-```
-
-Target:
-
-```text
-state
-```
-
-Обучается только на состояниях:
-
-```text
-normal
-warning
-critical
-```
-
-`unknown` не используется как класс обучения.
-
-Метрики:
-
-- accuracy;
-- classification report.
-
-### 9.5. Таблица `ml_predictions`
+### 9.4. Таблица `ml_predictions`
 
 Файлы:
 
@@ -963,18 +923,15 @@ ml_baseline/ml_predictions.parquet
 | `filter_id` | Фильтр. |
 | `scenario` | Сценарий. |
 | `split` | `train` или `test`. |
-| `state_true` | Истинное состояние из датасета. |
-| `state_pred` | Предсказанное состояние RandomForestClassifier. |
 | `RUL_oracle_h` | Истинный RUL. |
 | `RUL_pred_h` | Предсказанный RUL RandomForestRegressor. |
 
 Именно `RUL_pred_h` дальше переименуется в `RUL_ml_h` внутри рекомендательного слоя.
 
-### 9.6. Артефакты ML baseline
+### 9.5. Артефакты ML baseline
 
 ```text
 ml_baseline/random_forest_rul.joblib
-ml_baseline/random_forest_state.joblib
 ml_baseline/ml_metrics.json
 ml_baseline/ml_baseline_report.md
 ```

@@ -277,43 +277,7 @@ confidence_model = 0.0
 confidence_model = 0.70
 ```
 
-### CONF-MODEL-003. Бонус за совпадение состояния
-
-ЕСЛИ:
-
-```text
-state_pred == state
-```
-
-ТО:
-
-```text
-confidence_model = confidence_model + 0.10
-```
-
-Правило применяется только когда доступны оба состояния: `state_pred` и `state`.
-
-### CONF-MODEL-004. Штраф за расхождение состояния
-
-ЕСЛИ:
-
-```text
-state_pred != state
-```
-
-ТО:
-
-```text
-confidence_model = confidence_model - 0.15
-```
-
-Правило применяется только когда доступны оба состояния: `state_pred` и `state`.
-
-После бонуса или штрафа:
-
-```text
-confidence_model = clip(confidence_model, 0, 1)
-```
+Классификация состояния ML сейчас отключена, поэтому дополнительных бонусов или штрафов за `state_pred` нет.
 
 ### CONF-CONS-001. Неполная пара RUL
 

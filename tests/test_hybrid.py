@@ -45,7 +45,6 @@ def _ml_predictions() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "timestamp": pd.date_range("2026-01-01", periods=4, freq="1h"),
-            "state_pred": ["normal", "warning", "critical", "normal"],
             "RUL_pred_h": [205.0, 50.0, 7.0, 100.0],
         }
     )

@@ -46,7 +46,6 @@ OUTPUT_LABELS = {
     "ml_metrics_json": "ML baseline метрики JSON",
     "ml_report": "ML baseline отчет",
     "rul_model": "модель RandomForest для RUL",
-    "state_model": "модель RandomForest для state",
     "hybrid_decisions_csv": "гибридные решения CSV",
     "hybrid_decisions_parquet": "гибридные решения Parquet",
     "hybrid_decisions_ru_csv": "гибридные решения CSV на русском",

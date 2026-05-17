@@ -6,10 +6,8 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
     mean_absolute_error,
     mean_squared_error,
     r2_score,
@@ -37,8 +35,6 @@ ML_OUTPUT_COLUMNS = [
     "filter_id",
     "scenario",
     "split",
-    "state_true",
-    "state_pred",
     "RUL_oracle_h",
     "RUL_pred_h",
 ]
@@ -50,7 +46,7 @@ def train_and_export_ml_baseline(
     features: pd.DataFrame | None = None,
     test_run_ids: set[str] | None = None,
 ) -> dict[str, Path]:
-    """Обучает RandomForest-бейзлайны для RUL и state и сохраняет метрики/предсказания."""
+    """Обучает RandomForest-бейзлайн для RUL и сохраняет метрики/предсказания."""
     ml_dir = output_dir / "ml_baseline"
     ml_dir.mkdir(parents=True, exist_ok=True)
 
@@ -58,8 +54,7 @@ def train_and_export_ml_baseline(
     train_mask, split_info = _split_mask(prepared, train_share=0.70, test_run_ids=test_run_ids)
 
     regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
-    classifier, cls_metrics = _train_state_classifier(prepared, train_mask)
-    predictions = _build_predictions(prepared, train_mask, regressor, classifier)
+    predictions = _build_predictions(prepared, train_mask, regressor)
 
     paths = {
         "ml_predictions_csv": ml_dir / "ml_predictions.csv",
@@ -67,18 +62,15 @@ def train_and_export_ml_baseline(
         "ml_metrics_json": ml_dir / "ml_metrics.json",
         "ml_report": ml_dir / "ml_baseline_report.md",
         "rul_model": ml_dir / "random_forest_rul.joblib",
-        "state_model": ml_dir / "random_forest_state.joblib",
     }
     predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
     predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
     joblib.dump(regressor, paths["rul_model"])
-    joblib.dump(classifier, paths["state_model"])
 
     metrics = {
         "input_columns": ML_INPUT_COLUMNS,
         "split": split_info,
         "rul_regressor": reg_metrics,
-        "state_classifier": cls_metrics,
     }
     paths["ml_metrics_json"].write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -205,38 +197,6 @@ def _train_rul_regressor(
     return model, metrics
 
 
-def _train_state_classifier(
-    data: pd.DataFrame, train_mask: pd.Series
-) -> tuple[RandomForestClassifier, dict[str, object]]:
-    """Обучает RandomForestClassifier определять состояние фильтра по наблюдаемым признакам."""
-    target = "state"
-    valid = data[target].isin(["normal", "warning", "critical"])
-    train = data[train_mask & valid]
-    test = data[(~train_mask) & valid]
-    model = RandomForestClassifier(
-        n_estimators=120,
-        max_depth=12,
-        min_samples_leaf=5,
-        class_weight="balanced",
-        random_state=42,
-        n_jobs=-1,
-    )
-    model.fit(train[ML_INPUT_COLUMNS], train[target])
-    pred = model.predict(test[ML_INPUT_COLUMNS])
-    metrics = {
-        "target": target,
-        "train_rows": int(len(train)),
-        "test_rows": int(len(test)),
-        "accuracy": float(accuracy_score(test[target], pred)),
-        "classification_report": classification_report(
-            test[target], pred, output_dict=True, zero_division=0
-        ),
-    }
-    metrics["by_run_id"] = _classification_group_metrics(test, pred, target, "run_id")
-    metrics["by_scenario"] = _classification_group_metrics(test, pred, target, "scenario")
-    return model, metrics
-
-
 def _regression_metrics(y_true: pd.Series, y_pred: np.ndarray) -> dict[str, float | None]:
     """Считает основные метрики регрессии RUL и безопасно обрабатывает маленькие группы."""
     if len(y_true) == 0:
@@ -271,31 +231,10 @@ def _regression_group_metrics(
     return rows
 
 
-def _classification_group_metrics(
-    test: pd.DataFrame, y_pred: np.ndarray, target: str, group_column: str
-) -> list[dict[str, object]]:
-    """Считает accuracy классификатора отдельно по run_id или scenario."""
-    if group_column not in test.columns or len(test) == 0:
-        return []
-    scored = test[[group_column, target]].copy()
-    scored["prediction"] = y_pred
-    rows: list[dict[str, object]] = []
-    for group_value, group in scored.groupby(group_column, sort=True):
-        rows.append(
-            {
-                group_column: str(group_value),
-                "rows": int(len(group)),
-                "accuracy": float(accuracy_score(group[target], group["prediction"])),
-            }
-        )
-    return rows
-
-
 def _build_predictions(
     data: pd.DataFrame,
     train_mask: pd.Series,
     regressor: RandomForestRegressor,
-    classifier: RandomForestClassifier,
 ) -> pd.DataFrame:
     """Формирует таблицу предсказаний ML-бейзлайна на train и test участках."""
     result = pd.DataFrame(
@@ -305,11 +244,9 @@ def _build_predictions(
             "filter_id": data["filter_id"],
             "scenario": data["scenario"],
             "split": np.where(train_mask, "train", "test"),
-            "state_true": data["state"],
             "RUL_oracle_h": data["RUL_oracle_h"],
         }
     )
-    result["state_pred"] = classifier.predict(data[ML_INPUT_COLUMNS])
     result["RUL_pred_h"] = regressor.predict(data[ML_INPUT_COLUMNS])
     return result[ML_OUTPUT_COLUMNS]
 
@@ -317,7 +254,6 @@ def _build_predictions(
 def _report_markdown(metrics: dict[str, object]) -> str:
     """Генерирует краткий отчет для магистерской работы: входы, split и метрики."""
     rul = metrics["rul_regressor"]
-    cls = metrics["state_classifier"]
     split = metrics["split"]
     split_lines = [
         "## Split",
@@ -339,10 +275,9 @@ def _report_markdown(metrics: dict[str, object]) -> str:
         [
             "# ML baseline",
             "",
-            "Классический baseline обучает две модели RandomForest:",
+            "Классический baseline обучает одну модель RandomForest:",
             "",
             "- `RandomForestRegressor` для прогноза `RUL_oracle_h`.",
-            "- `RandomForestClassifier` для классификации `state`.",
             "",
             "## Входные признаки",
             "",
@@ -361,14 +296,6 @@ def _report_markdown(metrics: dict[str, object]) -> str:
             "",
             *_regression_markdown_rows(rul.get("by_scenario", []), "scenario"),
             "",
-            "## State classification",
-            "",
-            f"- Accuracy: `{cls['accuracy']:.3f}`.",
-            "",
-            "### State accuracy по сценариям",
-            "",
-            *_classification_markdown_rows(cls.get("by_scenario", []), "scenario"),
-            "",
         ]
     )
 
@@ -384,16 +311,6 @@ def _regression_markdown_rows(rows: object, key: str) -> list[str]:
             f"RMSE=`{_fmt_metric(row['rmse_h'])}` ч, "
             f"R2=`{_fmt_metric(row['r2'])}`."
         )
-        for row in rows
-    ]
-
-
-def _classification_markdown_rows(rows: object, key: str) -> list[str]:
-    """Форматирует групповые метрики классификации для markdown-отчета."""
-    if not rows:
-        return ["- Нет групповых метрик."]
-    return [
-        f"- `{row[key]}`: rows=`{row['rows']}`, accuracy=`{_fmt_metric(row['accuracy'])}`."
         for row in rows
     ]
 

@@ -68,7 +68,7 @@
 9. Расчет диагностических состояний, тревоги и RUL.
 10. Расчет признаков для baseline-моделей и интерпретации правил.
 11. Расчет rule-based baseline: состояние фильтра и рекомендация обслуживания.
-12. Обучение классического ML-baseline: RandomForestRegressor для RUL и RandomForestClassifier для state.
+12. Обучение классического ML-baseline: RandomForestRegressor для RUL.
 13. Построение гибридных решений на основе ML-прогноза, аналитического RUL и правил.
 14. Экспорт CSV, Parquet, metadata и русифицированных отчетных файлов.
 15. Построение графиков по расходу, давлениям, перепаду, засорению, RUL, состоянию и нормированному перепаду.
@@ -91,6 +91,7 @@ Feature builder создает минимальный набор признак�
 
 Подробные функции расчета каждого признака вынесены в `docs/feature_calculation_functions.md`.
 Функции расчета сырых наблюдаемых метрик описаны в `docs/raw_metric_calculation_functions.md`.
+Подробная аналитическая оценка параметров описана в `docs/analytic_estimation.md`.
 
 ## Rule-Based Baseline
 
@@ -113,7 +114,6 @@ Feature builder создает минимальный набор признак�
 В текущей версии обучается классический ML baseline:
 
 - `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
-- `RandomForestClassifier` классифицирует `state`.
 - Для ML генерируется корпус из нескольких независимых `run_id` с разными `scenario_name` и `seed`.
 - Split выполняется по `run_id`: train содержит одни seed, test содержит другие seed тех же сценариев и стресс-сценарии `sensor_bias`, `sensor_stuck`, `missing_data`.
 - В отчете сохраняются общие метрики и разрезы качества по сценариям.
@@ -123,7 +123,6 @@ Feature builder создает минимальный набор признак�
 Артефакты лежат в `outputs/<scenario_name>/ml_baseline/`:
 
 - `random_forest_rul.joblib`
-- `random_forest_state.joblib`
 - `ml_predictions.csv`
 - `ml_predictions.parquet`
 - `ml_metrics.json`

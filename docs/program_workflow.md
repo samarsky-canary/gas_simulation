@@ -108,10 +108,9 @@ Rule-based baseline определяет состояние и рекоменд�
 
 ## 7. ML Baseline
 
-ML baseline обучает две модели RandomForest:
+ML baseline обучает одну модель RandomForest:
 
-- `RandomForestRegressor` прогнозирует `RUL_oracle_h`;
-- `RandomForestClassifier` прогнозирует `state`.
+- `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
 
 Для обучения и оценки используется корпус из нескольких независимых синтетических прогонов. Каждый прогон имеет свой `run_id`, сценарий и seed. Train/test split выполняется по целым `run_id`: train содержит одни seed основных сценариев, test содержит другие seed тех же сценариев и отдельные стресс-сценарии `sensor_bias`, `sensor_stuck`, `missing_data`. Так модель видит полный диапазон RUL в train и проверяется на независимых траекториях.
 
@@ -119,7 +118,6 @@ ML baseline обучает две модели RandomForest:
 
 ```text
 ml_baseline/random_forest_rul.joblib
-ml_baseline/random_forest_state.joblib
 ml_baseline/ml_predictions.csv
 ml_baseline/ml_predictions.parquet
 ml_baseline/ml_metrics.json

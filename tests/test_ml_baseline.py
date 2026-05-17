@@ -27,4 +27,5 @@ def test_ml_baseline_trains_and_exports(tmp_path) -> None:
 
     assert all(path.exists() and path.stat().st_size > 0 for path in paths.values())
     predictions = pd.read_parquet(paths["ml_predictions_parquet"])
-    assert {"state_pred", "RUL_pred_h", "split"}.issubset(predictions.columns)
+    assert {"RUL_pred_h", "split"}.issubset(predictions.columns)
+    assert "state_pred" not in predictions.columns

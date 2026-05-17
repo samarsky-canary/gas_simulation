@@ -185,7 +185,7 @@ def _prepare_inputs(
     prediction_keys = ["timestamp"]
     if "run_id" in data.columns and "run_id" in ml_predictions.columns:
         prediction_keys = ["run_id", "timestamp"]
-    prediction_columns = [*prediction_keys, "RUL_pred_h", "state_pred"]
+    prediction_columns = [*prediction_keys, "RUL_pred_h"]
     existing_predictions = [column for column in prediction_columns if column in ml_predictions.columns]
     predictions = ml_predictions[existing_predictions].copy()
     predictions["timestamp"] = pd.to_datetime(predictions["timestamp"])
@@ -194,8 +194,6 @@ def _prepare_inputs(
 
     if "RUL_ml_h" not in data.columns:
         data["RUL_ml_h"] = np.nan
-    if "state_pred" not in data.columns:
-        data["state_pred"] = ""
     data["deltaP_roll_mean_1h"] = data["deltaP_roll_mean_1h"].fillna(data["deltaP_norm_kPa"])
     data["deltaP_slope_6h"] = data["deltaP_slope_6h"].fillna(0.0)
     data["missing_rate_1h"] = data["missing_rate_1h"].fillna(0.0)
@@ -268,14 +266,7 @@ def _confidence_model(row: pd.Series) -> float:
     rul_ml = row.get("RUL_ml_h", np.nan)
     if pd.isna(rul_ml) or float(rul_ml) < 0:
         return 0.0
-    confidence = 0.70
-    state_pred = str(row.get("state_pred", "") or "")
-    state = str(row.get("state", "") or "")
-    if state_pred and state and state_pred == state:
-        confidence += 0.10
-    elif state_pred and state and state_pred != state:
-        confidence -= 0.15
-    return float(np.clip(confidence, 0.0, 1.0))
+    return 0.70
 
 
 def _confidence_consistency(cfg: ScenarioConfig, row: pd.Series) -> float:

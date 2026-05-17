@@ -10,7 +10,6 @@ ML-модель сама по себе выдаёт только прогноз:
 
 ```text
 RUL_pred_h
-state_pred
 ```
 
 Но техническое решение не должно приниматься только по одному числу. Поэтому после ML работает отдельный слой правил:
@@ -56,8 +55,7 @@ build_hybrid_decisions(cfg, dataset, features, ml_predictions)
 
 Таблица ML baseline. Используются:
 
-- `RUL_pred_h`;
-- `state_pred`.
+- `RUL_pred_h`.
 
 Внутри reasoner:
 
@@ -113,7 +111,7 @@ hybrid/decision_cards.md
 
 1. `dataset.timestamp` приводится к datetime.
 2. Из `features` берутся нужные признаки и присоединяются по `timestamp`.
-3. Из `ml_predictions` берутся `RUL_pred_h` и `state_pred`.
+3. Из `ml_predictions` берется `RUL_pred_h`.
 4. `RUL_pred_h` переименовывается в `RUL_ml_h`.
 5. Если признаки отсутствуют, ставятся безопасные значения:
 
@@ -179,28 +177,13 @@ confidence_model = 0
 ```
 
 Иначе стартовое значение:
+Иначе:
 
 ```text
 confidence_model = 0.70
 ```
 
-Если классификатор состояния согласен с текущим состоянием:
-
-```text
-confidence_model += 0.10
-```
-
-Если не согласен:
-
-```text
-confidence_model -= 0.15
-```
-
-Итог:
-
-```text
-confidence_model = clip(confidence_model, 0, 1)
-```
+Классификация состояния сейчас отключена, поэтому `state_pred` не влияет на доверие.
 
 ## 8. Согласованность прогнозов `confidence_consistency`
 
