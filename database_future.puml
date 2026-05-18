@@ -1,0 +1,223 @@
+@startuml
+title Даталогическая модель будущей PostgreSQL-БД системы предиктивного обслуживания
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam linetype ortho
+skinparam ArrowColor #2F5597
+skinparam EntityBorderColor #2F5597
+skinparam EntityBackgroundColor #F8FBFF
+skinparam PackageBorderColor #A6A6A6
+skinparam PackageBackgroundColor #FAFAFA
+
+hide circle
+
+package "Справочники и конфигурации" {
+  entity "filters\nГазовые фильтры" as filters {
+    * filter_id : varchar <<PK>>
+    --
+    location : varchar
+    equipment_tag : varchar
+    nominal_flow_m3h : numeric
+    installed_at : timestamp
+  }
+
+  entity "scenarios\nСценарии моделирования" as scenarios {
+    * scenario_id : varchar <<PK>>
+    --
+    name : varchar
+    description : text
+    is_synthetic : boolean
+  }
+
+  entity "simulation_runs\nПрогоны / эксперименты" as runs {
+    * run_id : uuid <<PK>>
+    --
+    filter_id : varchar <<FK>>
+    scenario_id : varchar <<FK>>
+    started_at : timestamp
+    duration_days : integer
+    step_minutes : integer
+    seed : integer
+    schema_version : varchar
+  }
+
+  entity "run_config_params\nПараметры прогона" as run_config {
+    * param_id : uuid <<PK>>
+    --
+    run_id : uuid <<FK>>
+    param_name : varchar
+    param_value : text
+    unit : varchar
+  }
+}
+
+package "Временные ряды и признаки" {
+  entity "telemetry_observations\nНаблюдаемая телеметрия" as telemetry {
+    * observation_id : uuid <<PK>>
+    --
+    run_id : uuid <<FK>>
+    timestamp : timestamptz
+    p_in_mpa : numeric
+    p_out_mpa : numeric
+    delta_p_kpa : numeric
+    q_m3h : numeric
+    t_c : numeric
+    quality_code : varchar
+  }
+
+  entity "simulator_truth\nСкрытые истинные значения" as truth {
+    * truth_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    clog_level : numeric
+    delta_p_true_kpa : numeric
+    q_true_m3h : numeric
+    p_in_true_mpa : numeric
+    t_true_c : numeric
+    state_true : varchar
+    rul_oracle_h : numeric
+  }
+
+  entity "diagnostic_features\nДиагностические признаки" as features {
+    * feature_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    delta_p_norm_kpa : numeric
+    delta_p_roll_mean_1h : numeric
+    delta_p_roll_std_1h : numeric
+    delta_p_slope_6h : numeric
+    q_roll_mean_1h : numeric
+    missing_rate_1h : numeric
+    time_above_warn_h : numeric
+  }
+
+  entity "quality_checks\nПроверки качества" as quality {
+    * check_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    check_name : varchar
+    check_result : varchar
+    severity : varchar
+    details : text
+  }
+}
+
+package "Прогнозирование" {
+  entity "analytic_rul_estimates\nАналитический RUL" as analytic_rul {
+    * analytic_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    rul_analytic_h : numeric
+    degradation_rate_h : numeric
+    critical_clog_level : numeric
+    calculation_status : varchar
+  }
+
+  entity "ml_models\nML-модели" as ml_models {
+    * model_id : uuid <<PK>>
+    --
+    model_name : varchar
+    model_type : varchar
+    artifact_path : text
+    input_columns_json : jsonb
+    created_at : timestamp
+  }
+
+  entity "ml_training_runs\nОбучения ML" as ml_training {
+    * training_id : uuid <<PK>>
+    --
+    model_id : uuid <<FK>>
+    train_started_at : timestamp
+    split_type : varchar
+    train_rows : integer
+    test_rows : integer
+    metrics_json : jsonb
+  }
+
+  entity "ml_predictions\nML-прогнозы RUL" as ml_predictions {
+    * prediction_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    model_id : uuid <<FK>>
+    training_id : uuid <<FK>>
+    split : varchar
+    rul_pred_h : numeric
+    prediction_confidence : numeric
+  }
+}
+
+package "Правила и решения" {
+  entity "rule_baseline_results\nRule-based baseline" as rules {
+    * rule_result_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    state_rule : varchar
+    action_rule : varchar
+    priority_rule : varchar
+    reason_code : varchar
+  }
+
+  entity "hybrid_decisions\nГибридные решения" as decisions {
+    * decision_id : uuid <<PK>>
+    --
+    observation_id : uuid <<FK>>
+    ml_prediction_id : uuid <<FK>>
+    analytic_id : uuid <<FK>>
+    rul_fused_h : numeric
+    rul_source : varchar
+    confidence_total : numeric
+    action : varchar
+    priority : varchar
+    due_time_h : numeric
+  }
+
+  entity "decision_explanations\nОбъяснения решений" as explanations {
+    * explanation_id : uuid <<PK>>
+    --
+    decision_id : uuid <<FK>>
+    explanation_text : text
+    triggered_rules_json : jsonb
+    confidence_breakdown_json : jsonb
+    created_at : timestamp
+  }
+}
+
+filters ||--o{ runs : "обслуживается в"
+scenarios ||--o{ runs : "задает"
+runs ||--o{ run_config : "имеет параметры"
+runs ||--o{ telemetry : "формирует ряд"
+
+telemetry ||--o| truth : "имеет истину"
+telemetry ||--o| features : "имеет признаки"
+telemetry ||--o{ quality : "проверяется"
+telemetry ||--o| analytic_rul : "имеет оценку"
+telemetry ||--o{ ml_predictions : "прогнозируется"
+telemetry ||--o| rules : "оценивается правилами"
+telemetry ||--o{ decisions : "используется в"
+
+ml_models ||--o{ ml_training : "обучается"
+ml_models ||--o{ ml_predictions : "делает"
+ml_training ||--o{ ml_predictions : "порождает"
+
+analytic_rul ||--o{ decisions : "участвует"
+ml_predictions ||--o{ decisions : "участвует"
+decisions ||--o{ explanations : "объясняется"
+
+note bottom of truth
+  Таблица используется для синтетических данных.
+  В промышленной эксплуатации эти поля обычно недоступны.
+end note
+
+note bottom of features
+  Производные признаки отделены от сырой телеметрии,
+  чтобы можно было пересчитывать их разными версиями алгоритма.
+end note
+
+note bottom of decisions
+  Итоговое решение объединяет качество данных,
+  ML-прогноз, аналитический RUL и продукционные правила.
+end note
+
+@enduml

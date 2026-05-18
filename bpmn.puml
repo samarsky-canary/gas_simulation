@@ -1,0 +1,245 @@
+@startuml
+title BPMN-процесс принятия решений в системе предиктивного обслуживания газового фильтра
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam ArrowColor #2F5597
+skinparam ActivityBorderColor #2F5597
+skinparam ActivityBackgroundColor #F8FBFF
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #2F5597
+skinparam partitionBorderColor #A6A6A6
+skinparam partitionBackgroundColor #FAFAFA
+
+start
+
+partition "1. Получение и подготовка данных" {
+
+  :Загрузка конфигурации объекта;
+  note right
+    filter_id
+    Q_nom
+    dp_warn_kpa
+    dp_crit_kpa
+    параметры сценария
+  end note
+
+  if ("Источник данных?") then ("Симулятор")
+    :Генерация режима эксплуатации;
+    note right
+      Q, P_in, P_out, T
+      изменение нагрузки
+      сезонность / шум
+    end note
+
+    :Расчет скрытого уровня деградации;
+    note right
+      clog_level
+      degradation_rate
+      истинный RUL доступен
+      только в синтетической среде
+    end note
+
+    :Имитация работы датчиков;
+    note right
+      шум
+      пропуски
+      выбросы
+      залипание датчика
+    end note
+
+  else ("SCADA / архив")
+    :Получение телеметрии фильтра;
+    note right
+      P_in
+      P_out
+      Q
+      T
+      timestamp
+    end note
+  endif
+
+  :Формирование временного окна наблюдений;
+  note right
+    W(t) = {x_tau | t-w < tau <= t}
+  end note
+
+  :Расчет диагностических признаков;
+  note right
+    ΔP = P_in - P_out
+    ΔP_norm
+    тренд ΔP
+    скользящее среднее
+    доля пропусков
+    скорость роста перепада
+  end note
+}
+
+partition "2. Диагностика качества и состояния" {
+
+  :Проверка физической корректности данных;
+  note right
+    P_out <= P_in
+    Q >= 0
+    T в допустимом диапазоне
+    ΔP >= 0
+  end note
+
+  if ("Есть критические ошибки данных?") then ("Да")
+    :Сформировать рекомендацию\n«Проверить датчики»;
+    :Сформировать объяснение причины;
+    note right
+      Недостоверная телеметрия
+      не позволяет корректно
+      оценить состояние фильтра
+    end note
+    stop
+  else ("Нет")
+    :Оценка качества данных;
+    note right
+      data_confidence
+      учитывает пропуски,
+      выбросы, залипание,
+      стабильность измерений
+    end note
+  endif
+
+  :Оценка текущего состояния фильтра\nпо диагностическим признакам;
+  note right
+    NORMAL
+    WARNING
+    CRITICAL
+  end note
+
+  if ("ΔP >= критического порога?") then ("Да")
+    :Сформировать рекомендацию\n«Срочное обслуживание / останов»;
+    :Сформировать объяснение причины;
+    note right
+      Перепад давления достиг
+      критического значения
+    end note
+    stop
+  else ("Нет")
+  endif
+}
+
+partition "3. Прогнозирование остаточного ресурса" {
+
+  fork
+    :Расчет аналитического RUL;
+    note right
+      Интерпретируемая оценка
+      на основе ΔP, ΔP_norm,
+      тренда и порогов
+    end note
+  fork again
+    :Прогноз ML-RUL;
+    note right
+      ML-модель получает
+      окно диагностических признаков
+      и прогнозирует RUL
+    end note
+  end fork
+
+  :Оценка доверия к ML-прогнозу;
+  note right
+    model_confidence
+    зависит от применимости модели,
+    качества входных признаков
+    и устойчивости прогноза
+  end note
+
+  :Оценка согласованности прогнозов;
+  note right
+    consistency_confidence
+    сравнение ML-RUL
+    и аналитического RUL
+  end note
+
+  :Расчет итогового доверия;
+  note right
+    final_confidence =
+    f(data_confidence,
+      model_confidence,
+      consistency_confidence)
+  end note
+}
+
+partition "4. Гибридная логика принятия решения" {
+
+  if ("Доверие к данным низкое?") then ("Да")
+    :Выбрать действие\n«Проверить датчики»;
+    :Итоговый RUL не использовать\nкак основание для ТО;
+    :Записать причину в трассировку;
+  else ("Нет")
+
+    if ("ML и аналитический RUL\nсильно расходятся?") then ("Да")
+      :Выбрать консервативную оценку RUL;
+      note right
+        Используется меньший RUL
+        или аналитический RUL
+        как более объяснимый fallback
+      end note
+      :Записать причину в трассировку;
+    else ("Нет")
+      :Выполнить гибридное объединение RUL;
+      note right
+        RUL_final =
+        weighted_fusion(
+          RUL_ml,
+          RUL_analytic,
+          confidence)
+      end note
+    endif
+
+    if ("RUL_final <= порога срочного ТО?") then ("Да")
+      :Выбрать действие\n«Назначить срочное ТО»;
+    else ("Нет")
+      if ("RUL_final <= порога планового ТО?") then ("Да")
+        :Выбрать действие\n«Назначить плановое ТО»;
+      else ("Нет")
+        if ("Состояние WARNING?") then ("Да")
+          :Выбрать действие\n«Усилить мониторинг»;
+        else ("Нет")
+          :Выбрать действие\n«Продолжить мониторинг»;
+        endif
+      endif
+    endif
+  endif
+}
+
+partition "5. Формирование результата" {
+
+  :Сформировать итоговую рекомендацию;
+  note right
+    action
+    priority
+    due_time_h
+    RUL_final
+    confidence
+  end note
+
+  :Сформировать объяснение решения;
+  note right
+    explanation:
+    - состояние фильтра
+    - ключевые признаки
+    - источник итогового RUL
+    - уровень доверия
+    - трассировка логики
+  end note
+
+  :Передать рекомендацию оператору / инженеру ТО;
+
+  if ("Оператор подтверждает?") then ("Да")
+    :Создать задачу ТО / запись в журнале;
+  else ("Нет")
+    :Передать случай на ручную проверку;
+    :Сохранить корректировку оператора\nдля последующего анализа;
+  endif
+}
+
+stop
+
+@enduml

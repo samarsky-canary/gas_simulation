@@ -319,11 +319,11 @@ def _plot_rul_source_periods(
     decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
 
     fig, axes = plt.subplots(
-        3,
+        4,
         1,
-        figsize=(16, 11),
+        figsize=(16, 14),
         sharex=True,
-        gridspec_kw={"height_ratios": [2.6, 1.1, 1.1]},
+        gridspec_kw={"height_ratios": [2.6, 1.1, 1.1, 1.4]},
     )
 
     axes[0].plot(
@@ -379,6 +379,8 @@ def _plot_rul_source_periods(
     axes[2].set_ylabel("confidence")
     axes[2].legend(loc="best", ncol=4)
 
+    _plot_weekly_rul_source_counts(axes[3], decisions)
+
     for ax in axes:
         ax.grid(True, alpha=0.25)
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
@@ -414,6 +416,64 @@ def _plot_source_bands(ax: plt.Axes, decisions: pd.DataFrame) -> None:
     ax.set_yticklabels(list(positions.keys()))
     ax.set_ylim(-0.75, max(positions.values(), default=0) + 0.75)
     ax.legend(loc="best", ncol=3)
+
+
+def _plot_weekly_rul_source_counts(ax: plt.Axes, decisions: pd.DataFrame) -> None:
+    """Показывает, как часто за неделю итоговый RUL выбирался из каждого источника."""
+    weekly = _weekly_rul_source_counts(decisions)
+    if weekly.empty:
+        ax.text(0.5, 0.5, "Нет решений для недельной агрегации", transform=ax.transAxes, ha="center", va="center")
+        return
+
+    week_centers = weekly.index + pd.Timedelta(days=3.5)
+    x = mdates.date2num(week_centers.to_pydatetime())
+    width_days = 1.8
+    ax.bar(
+        x - width_days,
+        weekly["analytic"],
+        width=width_days,
+        label="аналитика",
+        color="#d62728",
+        alpha=0.82,
+    )
+    ax.bar(
+        x,
+        weekly["hybrid"],
+        width=width_days,
+        label="гибрид",
+        color="#ff7f0e",
+        alpha=0.82,
+    )
+    ax.bar(
+        x + width_days,
+        weekly["ml"],
+        width=width_days,
+        label="ML",
+        color="#1f77b4",
+        alpha=0.82,
+    )
+    ax.set_ylabel("решений / 7 дней")
+    ax.set_title("Количество решений по источникам RUL за 7 дней")
+    ax.legend(loc="best", ncol=3)
+
+
+def _weekly_rul_source_counts(decisions: pd.DataFrame) -> pd.DataFrame:
+    """Агрегирует решения по источникам RUL в семидневные интервалы."""
+    if decisions.empty or "timestamp" not in decisions.columns or "rul_source" not in decisions.columns:
+        return pd.DataFrame()
+
+    data = decisions[["timestamp", "rul_source"]].copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
+    data["rul_source"] = data["rul_source"].astype(str)
+    data = data.set_index("timestamp").sort_index()
+
+    return pd.DataFrame(
+        {
+            "analytic": data["rul_source"].isin(["analytic_fallback", "analytic_data_veto"]).resample("7D").sum(),
+            "hybrid": data["rul_source"].eq("conservative_min").resample("7D").sum(),
+            "ml": data["rul_source"].eq("ml_baseline").resample("7D").sum(),
+        }
+    ).fillna(0)
 
 
 def _source_intervals(decisions: pd.DataFrame) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
@@ -712,7 +772,7 @@ def _description() -> str:
             "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "- `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL с порогами обслуживания.",
             "- `10_gibridnoe_reshenie.png` - репрезентативное окно принятия решения: ML/analytic/fused RUL, confidence, источник RUL и действие.",
-            "- `11_periodi_predpochteniya_rul.png` - полный временной ряд: в какие периоды итоговый RUL берется из ML, аналитики, conservative min или fallback.",
+            "- `11_periodi_predpochteniya_rul.png` - полный временной ряд: в какие периоды итоговый RUL берется из ML, аналитики, conservative min или fallback; нижняя панель показывает недельные количества решений по источникам.",
             "",
             "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
             "",

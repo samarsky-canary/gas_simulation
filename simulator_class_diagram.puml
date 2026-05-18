@@ -1,0 +1,96 @@
+@startuml
+title Диаграмма классов и функций симулятора
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam classAttributeIconSize 0
+skinparam ArrowColor #2F5597
+skinparam ClassBorderColor #2F5597
+skinparam ClassBackgroundColor #F8FBFF
+
+class ScenarioConfig <<config>> {
+  filter_id : str
+  scenario_name : ScenarioName
+  start_time : datetime
+  duration_days : int
+  step_minutes : int
+  seed : int
+  q_nominal_m3h : float
+  dp0_kpa : float
+  dp_warn_kpa : float
+  dp_crit_kpa : float
+  k_s_per_hour : float
+  validate_ranges()
+}
+
+class runner <<module>> {
+  + run_scenario(cfg) : tuple[DataFrame, QCReport]
+}
+
+class timebase <<module>> {
+  + make_index(cfg) : DatetimeIndex
+}
+
+class profiles <<module>> {
+  + generate_profiles(cfg, idx, rng) : DataFrame
+  - _ar1(n, rho, sigma, rng) : ndarray
+}
+
+class degradation <<module>> {
+  + simulate_degradation(cfg, profile) : DataFrame
+}
+
+class physics <<module>> {
+  + compute_physics(cfg, profile, state) : DataFrame
+}
+
+class faults <<module>> {
+  + apply_sensor_model(cfg, profile, physics, rng) : DataFrame
+  + inject_faults(cfg, observed, rng) : DataFrame
+  - _spike_scale(channel, cfg) : float
+}
+
+class checks <<module>> {
+  + validate_run(cfg, df) : tuple[DataFrame, QCReport]
+}
+
+class QCReport <<model>> {
+  rows : int
+  rows_with_quality_issues : int
+  quality_counts : dict
+  pressure_order_ok : bool
+  nonnegative_dp_ok : bool
+  nonnegative_q_ok : bool
+  monotonic_clog_between_maintenance_ok : bool
+}
+
+class labels <<module>> {
+  + label_run(cfg, df) : DataFrame
+  - _states(values, cfg) : ndarray
+  - _rul_oracle(delta_p_true, cfg) : ndarray
+  - _rul_analytic(cfg, df) : ndarray
+  - _true_delta_p_norm(cfg, df) : ndarray
+  - _observed_delta_p_norm(cfg, df) : ndarray
+}
+
+runner --> ScenarioConfig : использует
+runner --> timebase : 1. make_index
+runner --> profiles : 2. generate_profiles
+runner --> degradation : 3. simulate_degradation
+runner --> physics : 4. compute_physics
+runner --> faults : 5. sensor model\n6. fault injection
+runner --> checks : 7. validate_run
+runner --> labels : 8. label_run
+checks --> QCReport : формирует
+
+timebase ..> profiles : DatetimeIndex
+profiles ..> degradation : profile
+profiles ..> physics : profile
+degradation ..> physics : clog_level
+profiles ..> faults : true channels
+physics ..> faults : p_out_true,\ndelta_p_true
+faults ..> checks : observed telemetry
+checks ..> labels : quality_code
+
+@enduml
