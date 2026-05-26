@@ -1,0 +1,98 @@
+@startuml
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam linetype ortho
+skinparam ArrowColor #2F5597
+skinparam StateBorderColor #2F5597
+skinparam StateBackgroundColor #F8FBFF
+skinparam NoteBackgroundColor #FFF8D7
+skinparam NoteBorderColor #C9B458
+
+hide empty description
+
+[*] --> InputReady
+
+state "Входные данные готовы" as InputReady
+InputReady : timestamp
+InputReady : P_in_MPa, P_out_MPa, deltaP_kPa, Q_m3h
+InputReady : RUL_ml_h, RUL_analytic_h
+InputReady : confidence_total
+InputReady : confidence_consistency
+InputReady : data_hard_veto
+
+InputReady --> CheckAvailability : начать выбор RUL
+
+state "Проверка доступности RUL" as CheckAvailability
+CheckAvailability --> Unavailable : RUL_analytic_h is NaN\nand RUL_ml_h is NaN
+CheckAvailability --> CheckDataVeto : доступен хотя бы один RUL
+
+state "Оба RUL недоступны" as Unavailable
+Unavailable : RUL_fused_h = NaN
+Unavailable : rul_source = unavailable
+
+state "Проверка жесткого вето данных" as CheckDataVeto
+CheckDataVeto --> AnalyticDataVeto : Данные невалидны
+CheckDataVeto --> CheckMlAvailable : Данные корректны
+
+state "Вето качества данных" as AnalyticDataVeto
+AnalyticDataVeto : RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
+AnalyticDataVeto : rul_source = analytic_data_veto
+
+state "Проверка доступности ML-RUL" as CheckMlAvailable
+CheckMlAvailable --> AnalyticFallbackNoMl : RUL_ml_h is NaN
+CheckMlAvailable --> CheckConfidence : RUL_ml_h доступен
+
+state "ML-RUL недоступен" as AnalyticFallbackNoMl
+AnalyticFallbackNoMl : RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
+AnalyticFallbackNoMl : rul_source = analytic_fallback
+
+state "Проверка доверия и согласованности" as CheckConfidence
+CheckConfidence --> MlBaseline : confidence_total >= 0.65\nи confidence_consistency >= 0.55
+CheckConfidence --> ConservativeCandidate : иначе
+
+state "Использование ML baseline" as MlBaseline
+MlBaseline : RUL_fused_h = RUL_ml_h
+MlBaseline : rul_source = ml_baseline
+
+state "Проверка условия\nконсервативного минимумума" as ConservativeCandidate
+ConservativeCandidate --> ConservativeMin : RUL_analytic_h доступен\nи confidence_total >= 0.30
+ConservativeCandidate --> AnalyticFallbackLowConfidence : иначе
+
+state "Консервативный минимум" as ConservativeMin
+ConservativeMin : RUL_fused_h = min(RUL_ml_h, RUL_analytic_h)
+ConservativeMin : rul_source = conservative_min
+
+state "Аналитический fallback" as AnalyticFallbackLowConfidence
+AnalyticFallbackLowConfidence : RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
+AnalyticFallbackLowConfidence : rul_source = analytic_fallback
+
+Unavailable --> OutputFused
+AnalyticDataVeto --> OutputFused
+AnalyticFallbackNoMl --> OutputFused
+MlBaseline --> OutputFused
+ConservativeMin --> OutputFused
+AnalyticFallbackLowConfidence --> OutputFused
+
+state "Выход гибридного RUL" as OutputFused
+OutputFused : RUL_fused_h
+OutputFused : rul_source
+
+OutputFused --> [*]
+
+note right of CheckDataVeto
+  data_hard_veto формируется до выбора RUL:
+  p_out > p_in или deltaP < 0 или Q < 0.
+  При NaN в этих полях жесткое вето не включается.
+end note
+
+note right of AnalyticDataVeto
+  first_available(a, b):
+  сначала берется RUL_analytic_h,
+  если он недоступен - RUL_ml_h,
+  иначе NaN.
+end note
+
+
+@enduml

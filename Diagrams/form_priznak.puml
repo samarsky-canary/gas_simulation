@@ -1,0 +1,81 @@
+@startuml
+title BPMN-процесс получения данных и формирования диагностических признаков
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam ArrowColor #2F5597
+skinparam ActivityBorderColor #2F5597
+skinparam ActivityBackgroundColor #F8FBFF
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #2F5597
+skinparam partitionBorderColor #A6A6A6
+skinparam partitionBackgroundColor #FAFAFA
+
+start
+
+partition "1. Получение и подготовка данных" {
+
+  :Загрузка конфигурации объекта;
+  note right
+    filter_id
+    Q_nom
+    dp_warn_kpa
+    dp_crit_kpa
+    параметры сценария
+  end note
+
+  if ("Источник данных?") then ("Симулятор")
+    :Генерация режима эксплуатации;
+    note right
+      Q, P_in, P_out, T
+      изменение нагрузки
+      сезонность / шум
+    end note
+
+    :Расчет скрытого уровня деградации;
+    note right
+      clog_level
+      degradation_rate
+      истинный RUL доступен
+      только в синтетической среде
+    end note
+
+    :Имитация работы датчиков;
+    note right
+      шум
+      пропуски
+      выбросы
+      залипание датчика
+    end note
+
+  else ("SCADA / архив")
+    :Получение телеметрии фильтра;
+    note right
+      P_in
+      P_out
+      Q
+      T
+      timestamp
+    end note
+  endif
+
+  :Формирование временного окна наблюдений;
+  note right
+    W(t) = {x_tau | t-w < tau <= t}
+  end note
+
+  :Расчет диагностических признаков;
+  note right
+    ΔP = P_in - P_out
+    ΔP_norm
+    тренд ΔP
+    скользящее среднее
+    доля пропусков
+    скорость роста перепада
+  end note
+}
+
+stop
+
+@enduml

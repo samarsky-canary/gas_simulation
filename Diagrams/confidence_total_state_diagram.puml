@@ -1,0 +1,112 @@
+@startuml
+title Диаграмма состояний выбора итоговой оценки доверия\nВыход: confidence_total
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam linetype ortho
+skinparam ArrowColor #2F5597
+skinparam StateBorderColor #2F5597
+skinparam StateBackgroundColor #F8FBFF
+skinparam NoteBackgroundColor #FFF8D7
+skinparam NoteBorderColor #C9B458
+
+hide empty description
+
+[*] --> InputReady
+
+state "Входные признаки и метрики готовы" as InputReady
+InputReady : P_in_MPa, P_out_MPa
+InputReady : deltaP_kPa, Q_m3h
+InputReady : quality_code
+InputReady : missing_rate_1h
+InputReady : RUL_ml_h
+InputReady : RUL_analytic_h
+InputReady : planned_maintenance_rul_h
+
+InputReady --> CheckPhysicalViolation : начать расчет доверия
+
+state "1. Проверка физических нарушений" as CheckPhysicalViolation
+CheckPhysicalViolation : p_out > p_in
+CheckPhysicalViolation : или deltaP < 0
+CheckPhysicalViolation : или Q < 0
+
+CheckPhysicalViolation --> DataHardVeto : нарушение найдено
+CheckPhysicalViolation --> DataQualityBase : нарушения нет
+
+state "2A. Жесткое вето данных" as DataHardVeto
+DataHardVeto : data_hard_veto = true
+DataHardVeto : confidence_data = 0.05
+
+state "2B. Базовое доверие к данным" as DataQualityBase
+DataQualityBase : data_hard_veto = false
+DataQualityBase : good -> 1.00
+DataQualityBase : missing -> 0.45
+DataQualityBase : invalid -> 0.20
+DataQualityBase : иначе -> 0.50
+
+DataQualityBase --> MissingRatePenalty
+
+state "3. Штраф за пропуски в окне" as MissingRatePenalty
+MissingRatePenalty : confidence_data =
+MissingRatePenalty : base - min(missing_rate_1h, 1.0) * 0.35
+MissingRatePenalty : затем clip(0.0, 1.0)
+
+DataHardVeto --> CheckMlRul
+MissingRatePenalty --> CheckMlRul
+
+state "4. Проверка ML-RUL" as CheckMlRul
+CheckMlRul --> ModelUnavailable : RUL_ml_h is NaN\nor RUL_ml_h < 0
+CheckMlRul --> ModelAvailable : RUL_ml_h доступен\nand RUL_ml_h >= 0
+
+state "ML-прогноз недоступен" as ModelUnavailable
+ModelUnavailable : confidence_model = 0.00
+
+state "ML-прогноз доступен" as ModelAvailable
+ModelAvailable : confidence_model = 0.70
+
+ModelUnavailable --> CheckConsistency
+ModelAvailable --> CheckConsistency
+
+state "5. Проверка согласованности RUL" as CheckConsistency
+CheckConsistency --> ConsistencyFallback : RUL_ml_h is NaN\nor RUL_analytic_h is NaN
+CheckConsistency --> ConsistencyCalculated : оба RUL доступны
+
+state "Один из RUL недоступен" as ConsistencyFallback
+ConsistencyFallback : confidence_consistency = 0.35
+
+state "Расчет согласованности" as ConsistencyCalculated
+ConsistencyCalculated : denominator =
+ConsistencyCalculated : max(abs(RUL_ml_h), abs(RUL_analytic_h),
+ConsistencyCalculated : planned_maintenance_rul_h, 1.0)
+ConsistencyCalculated : relative_gap =
+ConsistencyCalculated : abs(RUL_ml_h - RUL_analytic_h) / denominator
+ConsistencyCalculated : confidence_consistency =
+ConsistencyCalculated : clip(1.0 - relative_gap, 0.05, 1.0)
+
+ConsistencyFallback --> CalculateTotal
+ConsistencyCalculated --> CalculateTotal
+
+state "6. Итоговое доверие" as CalculateTotal
+CalculateTotal : confidence_total =
+CalculateTotal : confidence_data
+CalculateTotal : * confidence_model
+CalculateTotal : * confidence_consistency
+CalculateTotal : затем clip(0.0, 1.0)
+
+CalculateTotal --> [*]
+
+note right of CheckPhysicalViolation
+  Если хотя бы одно из p_in, p_out,
+  deltaP или Q равно NaN, физическое
+  вето не включается на этом шаге.
+end note
+
+note right of CalculateTotal
+  В текущей реализации confidence_total
+  не выбирается отдельным правилом,
+  а вычисляется как произведение трех
+  частных оценок доверия.
+end note
+
+@enduml

@@ -1,0 +1,165 @@
+@startuml
+title BPMN-процесс симуляции работы датчиков газового фильтра
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam ArrowColor #2F5597
+skinparam ActivityBorderColor #2F5597
+skinparam ActivityBackgroundColor #F8FBFF
+skinparam ActivityDiamondBackgroundColor #FFFFFF
+skinparam ActivityDiamondBorderColor #2F5597
+skinparam partitionBorderColor #A6A6A6
+skinparam partitionBackgroundColor #FAFAFA
+
+start
+
+partition "Конфигурация симуляции" {
+  :Загрузить конфигурацию объекта и сценария;
+  note right
+    filter_id
+    start_time
+    duration_days
+    step_minutes
+    Q_nom
+    dp_warn_kpa
+    dp_crit_kpa
+    параметры дефектов датчиков
+  end note
+
+  :Проверить полноту и допустимость параметров;
+
+  if ("Конфигурация корректна?") then ("Да")
+    :Инициализировать временную сетку;
+    note right
+      t0 ... tn
+      шаг дискретизации = step_minutes
+    end note
+  else ("Нет")
+    :Зафиксировать ошибку конфигурации;
+    stop
+  endif
+}
+
+partition "Модель режима эксплуатации" {
+  :Для очередного момента времени t\nсформировать режим эксплуатации;
+  note right
+    Расход газа Q(t)
+    входное давление P_in(t)
+    температура T(t)
+    режим нагрузки
+  end note
+
+  :Учесть сценарные изменения режима;
+  note right
+    нормальный режим
+    рост нагрузки
+    скачок расхода
+    сезонные/суточные колебания
+  end note
+}
+
+partition "Модель деградации фильтра" {
+  :Обновить скрытый уровень засорения;
+  note right
+    clog_level(t)
+    0 — чистый фильтр
+    1 — критическое засорение
+  end note
+
+  :Рассчитать физический перепад давления;
+  note right
+    ΔP_physical(t)
+    зависит от Q(t)
+    и clog_level(t)
+  end note
+
+  :Рассчитать выходное давление;
+  note right
+    P_out(t) = P_in(t) - ΔP_physical(t)
+  end note
+}
+
+partition "Модель датчиков" {
+  :Сформировать базовый телеметрический снимок;
+  note right
+    timestamp
+    P_in
+    P_out
+    Q
+    T
+    clog_level
+  end note
+
+  :Добавить измерительный шум;
+
+  if ("Сработал дефект данных?") then ("Да")
+    if ("Тип дефекта") then ("Пропуск")
+      :Заменить часть значений на NULL;
+    elseif ("Выброс")
+      :Добавить аномальное значение;
+    elseif ("Залипание")
+      :Повторить предыдущее значение датчика;
+    else ("Физически невозможное значение")
+      :Искажить показание вне допустимого диапазона;
+    endif
+
+    :Добавить флаг дефекта данных;
+  else ("Нет")
+    :Пометить снимок как нормальный;
+  endif
+
+  :Сохранить телеметрический снимок\nв исторический ряд;
+
+  if ("Достигнут конец горизонта симуляции?") then ("Нет")
+    :Перейти к следующему моменту времени;
+    -> "Для очередного момента времени t\nсформировать режим эксплуатации";
+  else ("Да")
+    :Сформировать итоговый датасет симуляции;
+  endif
+}
+
+partition "Подготовка диагностических признаков" {
+  :Отсортировать телеметрию по времени;
+
+  :Сформировать временные окна наблюдений;
+  note right
+    W(t) = {x_tau | t - w < tau <= t}
+  end note
+
+  :Рассчитать базовые признаки;
+  note right
+    ΔP = P_in - P_out
+    ΔP_norm
+    отношение Q / Q_nom
+  end note
+
+  :Рассчитать оконные признаки;
+  note right
+    скользящее среднее ΔP
+    стандартное отклонение ΔP
+    тренд ΔP
+    скорость роста ΔP
+    средний расход
+  end note
+
+  :Рассчитать признаки качества данных;
+  note right
+    доля пропусков
+    число выбросов
+    признаки залипания
+    физическая корректность P_in/P_out
+  end note
+
+  :Сформировать таблицу диагностических признаков;
+  note right
+    Вход для:
+    аналитического RUL
+    ML-прогнозирования
+    гибридного принятия решения
+  end note
+}
+
+stop
+
+@enduml

@@ -1,0 +1,192 @@
+@startuml
+left to right direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam packageStyle rectangle
+skinparam linetype ortho
+
+skinparam package {
+  BackgroundColor #EAF4FB
+  BorderColor #8EAFC7
+  FontStyle bold
+}
+
+skinparam class {
+  BackgroundColor #F8FBFF
+  BorderColor #6B8EAD
+  FontColor #333333
+}
+
+skinparam note {
+  BackgroundColor #FFF8D7
+  BorderColor #C9B458
+}
+
+' =====================================================
+' 1. ФИЗИЧЕСКАЯ ИНФРАСТРУКТУРА
+' =====================================================
+
+package "1. ФИЗИЧЕСКАЯ\nИНФРАСТРУКТУРА" as INFRA {
+  class "Узел\n(станция)" as Station
+  class "Фильтр" as Filter
+  class "Датчик" as Sensor
+  class "Состояние\nфильтра" as FilterState
+
+  Station -down-> Filter : содержит
+  Filter -down-> Sensor : контролируется
+  Filter -down-> FilterState : имеет
+}
+
+note bottom of FilterState
+  Состояния:
+  • normal
+  • warning
+  • critical
+  • unknown
+end note
+
+' =====================================================
+' 2. ТЕЛЕМЕТРИЯ И ПРИЗНАКИ
+' =====================================================
+
+package "2. ТЕЛЕМЕТРИЯ\nИ ПРИЗНАКИ" as DATA {
+  class "Параметр\nизмерения" as Parameter
+  class "Снимок\nсостояния" as Snapshot
+  class "История\nнаблюдений" as History
+  class "Тренд" as Trend
+  class "Диагностические\nпризнаки" as Features
+
+  Parameter -down-> Snapshot : группируется в
+  Snapshot -down-> History : накапливается в
+  History -down-> Features : преобразуется в
+  History -right-> Trend : содержит
+}
+
+' =====================================================
+' 3. ПРОГНОЗНЫЕ КОНТУРЫ
+' =====================================================
+
+package "3. ПРОГНОЗНЫЕ\nКОНТУРЫ" as PREDICTION {
+
+  package "Аналитический контур" as ANALYTIC_LOOP #EEF6FF {
+    class "Аналитическая\nмодель" as AnalyticModel
+    class "RUL_analytic" as AnalyticRUL
+
+    AnalyticModel -down-> AnalyticRUL : рассчитывает
+  }
+
+  package "ML-контур" as ML_LOOP #F1FFF1 {
+    class "ML-модель\nRandom Forest" as MLModel
+    class "RUL_ml" as MLRUL
+
+    MLModel -down-> MLRUL : прогнозирует
+  }
+}
+
+' =====================================================
+' 4. ГИБРИДНЫЙ СЛОЙ
+' =====================================================
+
+package "4. ГИБРИДНЫЙ\nСЛОЙ" as HYBRID #FFF4E6 {
+  class "Доверие\nк данным" as DataConfidence
+  class "Доверие\nк модели" as ModelConfidence
+  class "Согласованность\nпрогнозов" as ConsistencyConfidence
+  class "Итоговое\nдоверие" as TotalConfidence
+  class "RUL_fused" as FusedRUL
+  class "Итоговый\nпрогноз" as Forecast
+  class "Правило\nлогического вывода" as Rule
+
+  DataConfidence -down-> TotalConfidence : учитывается
+  ModelConfidence -down-> TotalConfidence : учитывается
+  ConsistencyConfidence -down-> TotalConfidence : учитывается
+
+  TotalConfidence -down-> FusedRUL : определяет\nстратегию выбора
+  FusedRUL -down-> Forecast : формирует
+  Forecast -down-> Rule : активирует
+}
+
+note bottom of HYBRID
+  Гибридный слой выбирает итоговый RUL:
+  • ML-прогноз;
+  • аналитический RUL;
+  • консервативный минимум;
+  • fallback при низком доверии.
+end note
+
+' =====================================================
+' 5. УПРАВЛЕНИЕ И ДЕЙСТВИЯ
+' =====================================================
+
+package "5. УПРАВЛЕНИЕ\nИ ДЕЙСТВИЯ" as CONTROL {
+  class "Задача\nобслуживания" as Task
+  class "Действие" as Action
+  class "Приоритет" as Priority
+  class "Статус" as Status
+
+  Task -down-> Action : определяет
+  Task -down-> Priority : имеет
+  Task -down-> Status : имеет
+}
+
+note left of Task
+  Типы действий:
+  • мониторинг;
+  • проверка датчиков;
+  • плановое ТО;
+  • срочное ТО;
+  • ручная проверка.
+end note
+
+' =====================================================
+' 6. УЧАСТНИКИ СИСТЕМЫ
+' =====================================================
+
+package "6. УЧАСТНИКИ\nСИСТЕМЫ" as ACTORS {
+  class "Оператор" as Operator
+  class "Администратор" as Admin
+  class "Техник" as Technician
+}
+
+' =====================================================
+' ОСНОВНОЙ ПОТОК ДАННЫХ
+' =====================================================
+
+Sensor -[#2F80ED]-> Parameter : телеметрия
+
+Features -[#2F80ED]-> AnalyticModel : признаки
+Features -[#2F80ED]-> MLModel : признаки
+
+Features -[#2F80ED]-> DataConfidence : качество данных
+MLRUL -[#2F80ED]-> ModelConfidence : применимость ML
+MLRUL -[#2F80ED]-> ConsistencyConfidence : сравнение
+AnalyticRUL -[#2F80ED]-> ConsistencyConfidence : сравнение
+
+AnalyticRUL -[#2F80ED]-> FusedRUL : вход
+MLRUL -[#2F80ED]-> FusedRUL : вход
+
+Rule -[#2F80ED]-> Task : формирует\nрекомендацию
+
+' =====================================================
+' УПРАВЛЕНЧЕСКИЕ СВЯЗИ
+' =====================================================
+
+Admin --> Task : назначает
+Technician --> Task : исполняет
+Operator --> Forecast : наблюдает
+
+FilterState ..> Rule : используется\nв правилах
+Task ..> Filter : относится к
+
+' =====================================================
+' СКРЫТЫЕ СВЯЗИ ДЛЯ ЧИТАЕМОЙ КОМПОНОВКИ
+' =====================================================
+
+INFRA -[hidden]right-> DATA
+DATA -[hidden]right-> PREDICTION
+PREDICTION -[hidden]right-> HYBRID
+HYBRID -[hidden]right-> CONTROL
+CONTROL -[hidden]right-> ACTORS
+
+@enduml

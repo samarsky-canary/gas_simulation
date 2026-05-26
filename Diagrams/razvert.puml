@@ -1,0 +1,100 @@
+@startuml
+title Диаграмма развертывания системы предиктивного обслуживания газового фильтра
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+skinparam node {
+  BackgroundColor #F8FBFF
+  BorderColor #2F5597
+}
+
+skinparam database {
+  BackgroundColor #FFF8E7
+  BorderColor #C09000
+}
+
+skinparam artifact {
+  BackgroundColor #F3F6FA
+  BorderColor #666666
+}
+
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #2F5597
+}
+
+node "ГРС / ПРГ\nпромышленный объект" as grs {
+  node "Газовый фильтр" as filter
+  node "Датчики" as sensors {
+  }
+  node "SCADA / архив телеметрии" as scada
+}
+
+node "Рабочее место исследователя\nили сервер аналитики" as app_server {
+  artifact "Python runtime" as python
+
+  component "Simulator" as simulator
+  component "Feature Builder" as feature_builder
+  component "Analytical RUL\nи rule-based baseline" as analytical
+  component "ML Baseline\nRandomForestRegressor" as ml
+  component "Hybrid Decision Layer" as hybrid
+  component "Visualization" as visualization
+  component "Exporters / Storage Layer" as exporters
+
+  artifact "YAML-конфигурации\nbase.yaml, scenarios.yaml" as yaml
+}
+
+database "PostgreSQL" as db {
+  artifact "telemetry" as t1
+  artifact "features" as t2
+  artifact "rul_predictions" as t3
+  artifact "hybrid_decisions" as t4
+  artifact "experiments_metadata" as t5
+}
+
+node "Хранилище артефактов" as storage {
+  artifact "random_forest_rul.joblib" as model_file
+  artifact "графики и отчёты" as reports
+}
+
+node "Рабочее место пользователя" as user_pc {
+  artifact "отчёты, графики,\nтаблицы решений" as user_outputs
+}
+
+sensors --> scada : телеметрия
+scada --> app_server : исторические данные\nили поток измерений
+
+yaml --> simulator : параметры сценария
+simulator --> feature_builder : синтетическая телеметрия
+feature_builder --> analytical : диагностические признаки
+feature_builder --> ml : признаки для ML
+analytical --> hybrid : RUL_analytic_h\nrule_state
+ml --> hybrid : RUL_ml_h
+hybrid --> visualization : итоговые решения
+hybrid --> exporters : RUL_fused_h\naction, priority,\nconfidence
+visualization --> exporters : графики
+
+exporters --> db : запись результатов
+ml --> storage : сохранение модели
+visualization --> storage : сохранение графиков
+exporters --> storage : отчётные выгрузки
+
+db --> user_pc : выборки и отчёты
+storage --> user_pc : графики,\nмодельные артефакты
+
+note right of scada
+  В рамках прототипа основным источником
+  данных является симулятор.
+  SCADA показана как целевой источник
+  данных при промышленной интеграции.
+end note
+
+note bottom of db
+  В целевой архитектуре PostgreSQL хранит:
+  телеметрию, признаки, прогнозы,
+  гибридные решения и метаданные экспериментов.
+end note
+
+@enduml
