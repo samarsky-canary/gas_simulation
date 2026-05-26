@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -113,9 +113,15 @@ SCENARIO_OVERRIDES: dict[str, dict[str, Any]] = {
 
 def load_config(path: Path | str) -> ScenarioConfig:
     """Загружает YAML-конфиг, применяет пресет сценария и возвращает валидированный объект."""
+    return load_config_with_overrides(path, {})
+
+
+def load_config_with_overrides(path: Path | str, overrides: Mapping[str, Any]) -> ScenarioConfig:
+    """Загружает YAML-конфиг, сценарный пресет и поверх них применяет параметры запуска."""
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh) or {}
-    scenario_name = raw.get("scenario_name", "slow_clogging")
-    merged = {**SCENARIO_OVERRIDES.get(scenario_name, {}), **raw}
+        base_raw = yaml.safe_load(fh) or {}
+    explicit_overrides = {key: value for key, value in overrides.items() if value is not None}
+    scenario_name = explicit_overrides.get("scenario_name", base_raw.get("scenario_name", "slow_clogging"))
+    merged = {**base_raw, **SCENARIO_OVERRIDES.get(scenario_name, {}), **explicit_overrides}
     return ScenarioConfig.model_validate(merged)

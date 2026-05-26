@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -10,7 +11,7 @@ from src.hybrid import (
     export_hybrid_decisions,
     format_console_decision_summary,
 )
-from src.ml import train_and_export_ml_baseline
+from src.ml import predict_and_export_ml_baseline, train_and_export_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
 from src.simulator.config import SCENARIO_OVERRIDES, ScenarioConfig, load_config
 from src.simulator.exporters import build_canonical_dataset, export_run
@@ -60,56 +61,102 @@ ML_STRESS_TEST_SCENARIOS = ("sensor_bias", "sensor_stuck", "missing_data")
 ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
 ML_STRESS_TEST_SEEDS = (42,)
+ML_CORPUS_MIN_DURATION_DAYS = 90
+ML_CACHE_DIR = Path("outputs/cache/ml_baseline/default")
 
 
-def main() -> None:
-    """Запускает полный конвейер: симуляция, экспорт, признаки, правила и графики."""
-    cfg = load_config(Path("configs/base.yaml"))
+@dataclass(frozen=True)
+class PipelineResult:
+    """Результаты полного запуска симуляционного конвейера."""
+
+    cfg: ScenarioConfig
+    output_dir: Path
+    row_count: int
+    quality_issue_rows: int
+    export_paths: dict[str, Path]
+    feature_paths: dict[str, Path]
+    rule_paths: dict[str, Path]
+    ml_paths: dict[str, Path]
+    hybrid_paths: dict[str, Path]
+    plot_paths: dict[str, Path]
+    decision_summary: str
+
+
+def run_pipeline(
+    cfg: ScenarioConfig,
+    output_dir: Path | None = None,
+    ml_cache_dir: Path = ML_CACHE_DIR,
+) -> PipelineResult:
+    """Запускает симуляцию, экспорт, признаки, baseline-модели, гибридную логику и графики."""
     df, report = run_scenario(cfg)
-    output_dir = Path("outputs") / cfg.scenario_name
+    output_dir = output_dir or Path("outputs") / cfg.scenario_name
     paths = export_run(cfg, df, report, output_dir)
     dataset = pd.read_parquet(paths["dataset_parquet"])
     features = build_features(cfg, df)
     feature_paths = export_features(cfg, features, output_dir)
     rule_baseline = apply_rule_baseline(cfg, df)
     rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir)
-    ml_dataset, ml_features, test_run_ids = _build_ml_training_corpus(cfg, df)
-    ml_paths = train_and_export_ml_baseline(
-        ml_dataset, output_dir, ml_features, test_run_ids=test_run_ids
+    cached_ml_paths = _ensure_ml_baseline_cache(cfg, ml_cache_dir)
+    ml_paths = predict_and_export_ml_baseline(
+        dataset,
+        output_dir,
+        cached_ml_paths["rul_model"],
+        features,
+        cached_metrics_path=cached_ml_paths["ml_metrics_json"],
+        cached_report_path=cached_ml_paths["ml_report"],
     )
     ml_predictions = pd.read_parquet(ml_paths["ml_predictions_parquet"])
     hybrid_decisions = build_hybrid_decisions(cfg, dataset, features, ml_predictions)
     hybrid_paths = export_hybrid_decisions(hybrid_decisions, output_dir)
     plot_paths = build_plots(cfg, df, output_dir, hybrid_decisions)
+    return PipelineResult(
+        cfg=cfg,
+        output_dir=output_dir,
+        row_count=len(df),
+        quality_issue_rows=report.rows_with_quality_issues,
+        export_paths=paths,
+        feature_paths=feature_paths,
+        rule_paths=rule_paths,
+        ml_paths=ml_paths,
+        hybrid_paths=hybrid_paths,
+        plot_paths=plot_paths,
+        decision_summary=format_console_decision_summary(hybrid_decisions),
+    )
 
-    print(f"Сгенерировано строк: {len(df)}")
-    print(f"Сценарий: {cfg.scenario_name}")
-    print(f"Строк с проблемами качества: {report.rows_with_quality_issues}")
+
+def main() -> None:
+    """Запускает полный конвейер: симуляция, экспорт, признаки, правила и графики."""
+    cfg = load_config(Path("configs/base.yaml"))
+    result = run_pipeline(cfg)
+
+    print(f"Сгенерировано строк: {result.row_count}")
+    print(f"Сценарий: {result.cfg.scenario_name}")
+    print(f"Строк с проблемами качества: {result.quality_issue_rows}")
     print("Созданные файлы:")
-    for name, path in paths.items():
+    for name, path in result.export_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Созданные признаки:")
-    for name, path in feature_paths.items():
+    for name, path in result.feature_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Создан rule-based baseline:")
-    for name, path in rule_paths.items():
+    for name, path in result.rule_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Обучен ML baseline:")
-    for name, path in ml_paths.items():
+    for name, path in result.ml_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Создана гибридная логика решений:")
-    for name, path in hybrid_paths.items():
+    for name, path in result.hybrid_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Созданные графики:")
-    for path in plot_paths.values():
+    for path in result.plot_paths.values():
         print(f"- {path}")
     print("")
-    print(format_console_decision_summary(hybrid_decisions))
+    print(result.decision_summary)
 
 
 def _build_ml_training_corpus(
@@ -137,6 +184,64 @@ def _build_ml_training_corpus(
         if is_test:
             test_run_ids.add(run_id)
         ordinal += 1
+
+    return (
+        pd.concat(datasets, ignore_index=True),
+        pd.concat(features, ignore_index=True),
+        test_run_ids,
+    )
+
+
+def _ensure_ml_baseline_cache(base_cfg: ScenarioConfig, cache_dir: Path) -> dict[str, Path]:
+    """Возвращает готовый ML baseline из кэша или обучает его при первом запуске."""
+    paths = _ml_baseline_cache_paths(cache_dir)
+    if all(path.exists() and path.stat().st_size > 0 for path in paths.values()):
+        return paths
+
+    ml_dataset, ml_features, test_run_ids = _build_cached_ml_training_corpus(base_cfg)
+    return train_and_export_ml_baseline(
+        ml_dataset,
+        cache_dir,
+        ml_features,
+        test_run_ids=test_run_ids,
+        use_subdir=False,
+    )
+
+
+def _ml_baseline_cache_paths(cache_dir: Path) -> dict[str, Path]:
+    """Описывает ожидаемые файлы дискового кэша ML baseline."""
+    return {
+        "ml_predictions_csv": cache_dir / "ml_predictions.csv",
+        "ml_predictions_parquet": cache_dir / "ml_predictions.parquet",
+        "ml_metrics_json": cache_dir / "ml_metrics.json",
+        "ml_report": cache_dir / "ml_baseline_report.md",
+        "rul_model": cache_dir / "random_forest_rul.joblib",
+    }
+
+
+def _build_cached_ml_training_corpus(
+    base_cfg: ScenarioConfig,
+) -> tuple[pd.DataFrame, pd.DataFrame, set[str]]:
+    """Генерирует стабильный ML-корпус для кэша без привязки к текущему UI-прогону."""
+    datasets = []
+    features = []
+    test_run_ids = set()
+    generated_run_ids = set()
+
+    for ordinal, (scenario_name, seed, is_test) in enumerate(_ml_corpus_plan(), start=1):
+        run_id = f"{scenario_name}_{seed}"
+        if run_id in generated_run_ids:
+            if is_test:
+                test_run_ids.add(run_id)
+            continue
+
+        run_cfg = _ml_variant_config(base_cfg, scenario_name, seed, ordinal)
+        run_df, _ = run_scenario(run_cfg)
+        datasets.append(build_canonical_dataset(run_cfg, run_df))
+        features.append(build_features(run_cfg, run_df))
+        generated_run_ids.add(run_id)
+        if is_test:
+            test_run_ids.add(run_id)
 
     return (
         pd.concat(datasets, ignore_index=True),
@@ -175,6 +280,7 @@ def _ml_variant_config(
         {
             "filter_id": f"F-ML-{ordinal:03d}",
             "scenario_name": scenario_name,
+            "duration_days": max(base_cfg.duration_days, ML_CORPUS_MIN_DURATION_DAYS),
             "seed": seed,
         }
     )

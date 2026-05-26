@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import joblib
@@ -45,9 +46,10 @@ def train_and_export_ml_baseline(
     output_dir: Path,
     features: pd.DataFrame | None = None,
     test_run_ids: set[str] | None = None,
+    use_subdir: bool = True,
 ) -> dict[str, Path]:
     """Обучает RandomForest-бейзлайн для RUL и сохраняет метрики/предсказания."""
-    ml_dir = output_dir / "ml_baseline"
+    ml_dir = output_dir / "ml_baseline" if use_subdir else output_dir
     ml_dir.mkdir(parents=True, exist_ok=True)
 
     prepared = _prepare_dataset(_attach_features(dataset, features))
@@ -76,6 +78,56 @@ def train_and_export_ml_baseline(
         json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     paths["ml_report"].write_text(_report_markdown(metrics), encoding="utf-8")
+    return paths
+
+
+def predict_and_export_ml_baseline(
+    dataset: pd.DataFrame,
+    output_dir: Path,
+    model_path: Path,
+    features: pd.DataFrame | None = None,
+    cached_metrics_path: Path | None = None,
+    cached_report_path: Path | None = None,
+) -> dict[str, Path]:
+    """Строит RUL-прогноз текущего запуска готовой ML-моделью и сохраняет артефакты."""
+    ml_dir = output_dir / "ml_baseline"
+    ml_dir.mkdir(parents=True, exist_ok=True)
+
+    prepared = _prepare_dataset(_attach_features(dataset, features))
+    regressor = joblib.load(model_path)
+    predictions = _build_inference_predictions(prepared, regressor)
+
+    paths = {
+        "ml_predictions_csv": ml_dir / "ml_predictions.csv",
+        "ml_predictions_parquet": ml_dir / "ml_predictions.parquet",
+        "ml_metrics_json": ml_dir / "ml_metrics.json",
+        "ml_report": ml_dir / "ml_baseline_report.md",
+        "rul_model": ml_dir / "random_forest_rul.joblib",
+    }
+    predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
+    predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
+    shutil.copy2(model_path, paths["rul_model"])
+
+    if cached_metrics_path and cached_metrics_path.exists():
+        shutil.copy2(cached_metrics_path, paths["ml_metrics_json"])
+    else:
+        metrics = {
+            "input_columns": ML_INPUT_COLUMNS,
+            "source_model": str(model_path),
+            "prediction_rows": int(len(predictions)),
+        }
+        paths["ml_metrics_json"].write_text(
+            json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    if cached_report_path and cached_report_path.exists():
+        shutil.copy2(cached_report_path, paths["ml_report"])
+    else:
+        paths["ml_report"].write_text(
+            "# ML baseline\n\nИспользована готовая модель для inference текущего запуска.\n",
+            encoding="utf-8",
+        )
+
     return paths
 
 
@@ -245,6 +297,25 @@ def _build_predictions(
             "scenario": data["scenario"],
             "split": np.where(train_mask, "train", "test"),
             "RUL_oracle_h": data["RUL_oracle_h"],
+        }
+    )
+    result["RUL_pred_h"] = regressor.predict(data[ML_INPUT_COLUMNS])
+    return result[ML_OUTPUT_COLUMNS]
+
+
+def _build_inference_predictions(
+    data: pd.DataFrame,
+    regressor: RandomForestRegressor,
+) -> pd.DataFrame:
+    """Формирует таблицу ML-прогноза для текущего запуска без переобучения."""
+    result = pd.DataFrame(
+        {
+            "timestamp": data["timestamp"],
+            "run_id": data["run_id"] if "run_id" in data.columns else "",
+            "filter_id": data["filter_id"],
+            "scenario": data["scenario"],
+            "split": "inference",
+            "RUL_oracle_h": data["RUL_oracle_h"] if "RUL_oracle_h" in data.columns else np.nan,
         }
     )
     result["RUL_pred_h"] = regressor.predict(data[ML_INPUT_COLUMNS])
