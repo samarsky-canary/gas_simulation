@@ -8,6 +8,30 @@
 .\.venv\Scripts\python.exe main.py
 ```
 
+Streamlit-интерфейс для демонстрации:
+
+```powershell
+streamlit run app.py
+```
+
+## Запуск в Docker
+
+Сборка и запуск контейнера:
+
+```powershell
+docker build -t gas-simulation:latest .
+docker run --rm -p 8501:8501 -v ${PWD}/outputs:/app/outputs gas-simulation:latest
+```
+
+После запуска приложение доступно по адресу `http://localhost:8501`.
+Результаты UI-прогонов сохраняются в локальный каталог `outputs/`.
+
+Альтернативно можно запустить через Docker Compose:
+
+```powershell
+docker compose up --build
+```
+
 Результаты пишутся в `outputs/<scenario_name>/`:
 
 - `dataset.csv` / `dataset.parquet` - зафиксированный основной датасет с финальным контрактом колонок.
