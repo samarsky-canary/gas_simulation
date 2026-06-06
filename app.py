@@ -21,6 +21,18 @@ GRAPH_CHOICES = {
     "11 - периоды предпочтения RUL": "rul_source_periods",
 }
 
+SCENARIO_LABELS = {
+    "normal": "Нормальный режим",
+    "slow_clogging": "Медленное засорение",
+    "rapid_clogging": "Быстрое засорение",
+    "flow_spikes": "Скачки расхода",
+    "sensor_bias": "Дрейф показаний датчика",
+    "sensor_stuck": "Залипание датчика",
+    "missing_data": "Пропуски данных",
+    "maintenance_reset": "Обслуживание со сбросом засорения",
+}
+SCENARIO_CODES = {label: code for code, label in SCENARIO_LABELS.items()}
+
 
 def main() -> None:
     st.set_page_config(
@@ -34,13 +46,20 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Параметры запуска")
+        scenario_codes = list(SCENARIO_OVERRIDES)
+        scenario_labels = [SCENARIO_LABELS[code] for code in scenario_codes]
+        selected_scenario = st.selectbox(
+            "Сценарий",
+            scenario_labels,
+            index=scenario_codes.index(base_cfg.scenario_name),
+            key="scenario_label",
+        )
+        scenario_name = SCENARIO_CODES[selected_scenario]
+        scenario_p_missing = float(
+            SCENARIO_OVERRIDES[scenario_name].get("p_missing", base_cfg.p_missing)
+        )
+
         with st.form("simulation_form"):
-            scenario_names = list(SCENARIO_OVERRIDES)
-            scenario_name = st.selectbox(
-                "Сценарий",
-                scenario_names,
-                index=scenario_names.index(base_cfg.scenario_name),
-            )
             duration_days = st.number_input(
                 "Длительность, суток",
                 min_value=1,
@@ -62,6 +81,19 @@ def main() -> None:
                 step=0.00001,
                 format="%.8f",
             )
+            p_missing_percent = st.number_input(
+                "Вероятность пропуска по каждому датчику, %",
+                min_value=0.0,
+                max_value=100.0,
+                value=scenario_p_missing * 100.0,
+                step=0.1,
+                format="%.2f",
+                key=f"p_missing_percent_{scenario_name}",
+                help=(
+                    "Вероятность пропуска отдельно для P_in, P_out, Q и T "
+                    "на каждом временном шаге."
+                ),
+            )
             submitted = st.form_submit_button("Запустить симуляцию", type="primary")
 
     if submitted:
@@ -70,6 +102,7 @@ def main() -> None:
             "duration_days": int(duration_days),
             "step_minutes": int(step_minutes),
             "k_s_per_hour": float(k_s_per_hour),
+            "p_missing": float(p_missing_percent) / 100.0,
         }
         cfg = load_config_with_overrides(BASE_CONFIG_PATH, overrides)
         run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

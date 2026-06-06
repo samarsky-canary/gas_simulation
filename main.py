@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,9 +27,6 @@ OUTPUT_LABELS = {
     "truth_labels_parquet": "истинные метки Parquet",
     "wide_debug_csv": "полный отладочный набор CSV",
     "wide_debug_parquet": "полный отладочный набор Parquet",
-    "raw_observed_ru_csv": "наблюдаемая телеметрия CSV на русском",
-    "truth_labels_ru_csv": "истинные метки CSV на русском",
-    "wide_debug_ru_csv": "полный отладочный набор CSV на русском",
     "operations_description": "описание операций",
     "metadata": "метаданные",
     "dataset_csv": "зафиксированный датасет CSV",
@@ -36,11 +34,9 @@ OUTPUT_LABELS = {
     "dataset_schema": "описание схемы датасета",
     "features_csv": "признаки CSV",
     "features_parquet": "признаки Parquet",
-    "features_ru_csv": "признаки CSV на русском",
     "feature_description": "описание признаков",
     "rule_baseline_csv": "rule-based baseline CSV",
     "rule_baseline_parquet": "rule-based baseline Parquet",
-    "rule_baseline_ru_csv": "rule-based baseline CSV на русском",
     "rule_baseline_description": "описание rule-based baseline",
     "ml_predictions_csv": "ML baseline предсказания CSV",
     "ml_predictions_parquet": "ML baseline предсказания Parquet",
@@ -49,7 +45,6 @@ OUTPUT_LABELS = {
     "rul_model": "модель RandomForest для RUL",
     "hybrid_decisions_csv": "гибридные решения CSV",
     "hybrid_decisions_parquet": "гибридные решения Parquet",
-    "hybrid_decisions_ru_csv": "гибридные решения CSV на русском",
     "hybrid_description": "описание гибридной логики",
     "hybrid_decision_packages_jsonl": "пакеты объяснения решений JSONL",
     "hybrid_decision_cards_md": "карточки объяснения решений Markdown",
@@ -90,24 +85,26 @@ def run_pipeline(
     """Запускает симуляцию, экспорт, признаки, baseline-модели, гибридную логику и графики."""
     df, report = run_scenario(cfg)
     output_dir = output_dir or Path("outputs") / cfg.scenario_name
-    paths = export_run(cfg, df, report, output_dir)
-    dataset = pd.read_parquet(paths["dataset_parquet"])
+    paths = export_run(cfg, df, report, output_dir, export_csv=False)
+    dataset = build_canonical_dataset(cfg, df)
     features = build_features(cfg, df)
-    feature_paths = export_features(cfg, features, output_dir)
+    feature_paths = export_features(cfg, features, output_dir, export_csv=False)
     rule_baseline = apply_rule_baseline(cfg, df)
-    rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir)
-    cached_ml_paths = _ensure_ml_baseline_cache(cfg, ml_cache_dir)
-    ml_paths = predict_and_export_ml_baseline(
+    rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir, export_csv=False)
+    cached_ml_paths = _require_ml_baseline_cache(ml_cache_dir)
+    ml_predictions, ml_paths = predict_and_export_ml_baseline(
         dataset,
         output_dir,
         cached_ml_paths["rul_model"],
         features,
         cached_metrics_path=cached_ml_paths["ml_metrics_json"],
         cached_report_path=cached_ml_paths["ml_report"],
+        export_csv=False,
     )
-    ml_predictions = pd.read_parquet(ml_paths["ml_predictions_parquet"])
     hybrid_decisions = build_hybrid_decisions(cfg, dataset, features, ml_predictions)
-    hybrid_paths = export_hybrid_decisions(hybrid_decisions, output_dir)
+    hybrid_paths = export_hybrid_decisions(
+        hybrid_decisions, output_dir, export_csv=False
+    )
     plot_paths = build_plots(cfg, df, output_dir, hybrid_decisions)
     return PipelineResult(
         cfg=cfg,
@@ -126,7 +123,20 @@ def run_pipeline(
 
 def main() -> None:
     """Запускает полный конвейер: симуляция, экспорт, признаки, правила и графики."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--train-ml",
+        action="store_true",
+        help="Train and replace the shared ML cache, then exit.",
+    )
+    args = parser.parse_args()
     cfg = load_config(Path("configs/base.yaml"))
+    if args.train_ml:
+        paths = train_ml_baseline_cache(cfg)
+        print("ML cache trained:")
+        for path in paths.values():
+            print(f"- {path}")
+        return
     result = run_pipeline(cfg)
 
     print(f"Сгенерировано строк: {result.row_count}")
@@ -192,12 +202,21 @@ def _build_ml_training_corpus(
     )
 
 
-def _ensure_ml_baseline_cache(base_cfg: ScenarioConfig, cache_dir: Path) -> dict[str, Path]:
-    """Возвращает готовый ML baseline из кэша или обучает его при первом запуске."""
+def _require_ml_baseline_cache(cache_dir: Path) -> dict[str, Path]:
+    """Возвращает готовую модель или требует отдельного запуска обучения."""
     paths = _ml_baseline_cache_paths(cache_dir)
     if all(path.exists() and path.stat().st_size > 0 for path in paths.values()):
         return paths
+    raise RuntimeError(
+        "ML cache is missing or incomplete. Run `python main.py --train-ml` once."
+    )
 
+
+def train_ml_baseline_cache(
+    base_cfg: ScenarioConfig,
+    cache_dir: Path = ML_CACHE_DIR,
+) -> dict[str, Path]:
+    """Явно обучает общий ML baseline отдельно от simulation/inference pipeline."""
     ml_dataset, ml_features, test_run_ids = _build_cached_ml_training_corpus(base_cfg)
     return train_and_export_ml_baseline(
         ml_dataset,
@@ -205,14 +224,13 @@ def _ensure_ml_baseline_cache(base_cfg: ScenarioConfig, cache_dir: Path) -> dict
         ml_features,
         test_run_ids=test_run_ids,
         use_subdir=False,
+        export_predictions=False,
     )
 
 
 def _ml_baseline_cache_paths(cache_dir: Path) -> dict[str, Path]:
     """Описывает ожидаемые файлы дискового кэша ML baseline."""
     return {
-        "ml_predictions_csv": cache_dir / "ml_predictions.csv",
-        "ml_predictions_parquet": cache_dir / "ml_predictions.parquet",
         "ml_metrics_json": cache_dir / "ml_metrics.json",
         "ml_report": cache_dir / "ml_baseline_report.md",
         "rul_model": cache_dir / "random_forest_rul.joblib",

@@ -36,63 +36,6 @@ HYBRID_COLUMNS = [
     "explanation",
 ]
 
-RU_COLUMNS = {
-    "timestamp": "время",
-    "filter_id": "идентификатор_фильтра",
-    "scenario": "сценарий",
-    "state": "состояние",
-    "quality_code": "код_качества",
-    "deltaP_norm_kPa": "нормированный_перепад_давления_кпа",
-    "deltaP_roll_mean_1h": "средний_перепад_за_1ч_кпа",
-    "deltaP_slope_6h": "скорость_роста_перепада_за_6ч",
-    "time_above_warn": "время_выше_warning_ч",
-    "missing_rate_1h": "доля_пропусков_за_1ч",
-    "RUL_oracle_h": "остаточный_ресурс_oracle_ч",
-    "RUL_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "RUL_ml_h": "остаточный_ресурс_ml_ч",
-    "RUL_fused_h": "итоговый_остаточный_ресурс_ч",
-    "rul_source": "источник_итогового_rul",
-    "confidence_data": "доверие_к_данным",
-    "confidence_model": "доверие_к_модели",
-    "confidence_consistency": "доверие_к_согласованности",
-    "confidence_total": "общее_доверие",
-    "action": "действие",
-    "priority": "приоритет",
-    "due_time_h": "срок_ч",
-    "rule_trace": "сработавшие_правила",
-    "explanation": "объяснение",
-}
-
-RU_VALUES = {
-    "state": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "quality_code": {
-        "good": "хорошие данные",
-        "missing": "есть пропуски",
-        "invalid": "некорректные данные",
-    },
-    "rul_source": {
-        "ml_baseline": "ML baseline",
-        "conservative_min": "консервативный минимум",
-        "analytic_fallback": "аналитический fallback",
-        "analytic_data_veto": "аналитика из-за вето качества данных",
-        "unavailable": "недоступно",
-    },
-    "action": {
-        "monitor": "продолжить мониторинг",
-        "sensor_check": "проверить датчики",
-        "planned_maintenance": "плановое обслуживание",
-        "urgent_maintenance": "срочное обслуживание",
-        "shutdown_request": "запрос на останов",
-        "manual_review": "ручная проверка",
-    },
-}
-
-
 def build_hybrid_decisions(
     cfg: ScenarioConfig,
     dataset: pd.DataFrame,
@@ -106,21 +49,25 @@ def build_hybrid_decisions(
     return result[HYBRID_COLUMNS]
 
 
-def export_hybrid_decisions(decisions: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
+def export_hybrid_decisions(
+    decisions: pd.DataFrame,
+    output_dir: Path,
+    *,
+    export_csv: bool = True,
+) -> dict[str, Path]:
     """Сохраняет гибридные решения и описание логики принятия решений."""
     hybrid_dir = output_dir / "hybrid"
     hybrid_dir.mkdir(parents=True, exist_ok=True)
     paths = {
-        "hybrid_decisions_csv": hybrid_dir / "hybrid_decisions.csv",
         "hybrid_decisions_parquet": hybrid_dir / "hybrid_decisions.parquet",
-        "hybrid_decisions_ru_csv": hybrid_dir / "hybrid_decisions_ru.csv",
         "hybrid_description": hybrid_dir / "hybrid_decision_logic.md",
         "hybrid_decision_packages_jsonl": hybrid_dir / "decision_packages.jsonl",
         "hybrid_decision_cards_md": hybrid_dir / "decision_cards.md",
     }
-    decisions.to_csv(paths["hybrid_decisions_csv"], index=False, encoding="utf-8")
+    if export_csv:
+        paths["hybrid_decisions_csv"] = hybrid_dir / "hybrid_decisions.csv"
+        decisions.to_csv(paths["hybrid_decisions_csv"], index=False, encoding="utf-8")
     decisions.to_parquet(paths["hybrid_decisions_parquet"], index=False)
-    _to_russian_csv(decisions, paths["hybrid_decisions_ru_csv"])
     paths["hybrid_description"].write_text(_description(), encoding="utf-8")
     _write_decision_packages_jsonl(decisions, paths["hybrid_decision_packages_jsonl"])
     paths["hybrid_decision_cards_md"].write_text(_decision_cards_markdown(decisions), encoding="utf-8")
@@ -467,16 +414,6 @@ def _fallback_value(primary: float | None, secondary: float | None) -> float:
     if secondary is not None:
         return secondary
     return np.nan
-
-
-def _to_russian_csv(decisions: pd.DataFrame, path: Path) -> None:
-    """Создает русифицированный CSV с решениями гибридной модели."""
-    localized = decisions.copy()
-    for column, mapping in RU_VALUES.items():
-        if column in localized.columns:
-            localized[column] = localized[column].replace(mapping)
-    localized = localized.rename(columns=RU_COLUMNS)
-    localized.to_csv(path, index=False, encoding="utf-8-sig")
 
 
 def _write_decision_packages_jsonl(decisions: pd.DataFrame, path: Path) -> None:

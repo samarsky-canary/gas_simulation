@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import joblib
@@ -47,6 +46,7 @@ def train_and_export_ml_baseline(
     features: pd.DataFrame | None = None,
     test_run_ids: set[str] | None = None,
     use_subdir: bool = True,
+    export_predictions: bool = True,
 ) -> dict[str, Path]:
     """Обучает RandomForest-бейзлайн для RUL и сохраняет метрики/предсказания."""
     ml_dir = output_dir / "ml_baseline" if use_subdir else output_dir
@@ -59,14 +59,15 @@ def train_and_export_ml_baseline(
     predictions = _build_predictions(prepared, train_mask, regressor)
 
     paths = {
-        "ml_predictions_csv": ml_dir / "ml_predictions.csv",
-        "ml_predictions_parquet": ml_dir / "ml_predictions.parquet",
         "ml_metrics_json": ml_dir / "ml_metrics.json",
         "ml_report": ml_dir / "ml_baseline_report.md",
         "rul_model": ml_dir / "random_forest_rul.joblib",
     }
-    predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
-    predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
+    if export_predictions:
+        paths["ml_predictions_csv"] = ml_dir / "ml_predictions.csv"
+        paths["ml_predictions_parquet"] = ml_dir / "ml_predictions.parquet"
+        predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
+        predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
     joblib.dump(regressor, paths["rul_model"])
 
     metrics = {
@@ -88,28 +89,27 @@ def predict_and_export_ml_baseline(
     features: pd.DataFrame | None = None,
     cached_metrics_path: Path | None = None,
     cached_report_path: Path | None = None,
-) -> dict[str, Path]:
+    export_csv: bool = True,
+) -> tuple[pd.DataFrame, dict[str, Path]]:
     """Строит RUL-прогноз текущего запуска готовой ML-моделью и сохраняет артефакты."""
     ml_dir = output_dir / "ml_baseline"
     ml_dir.mkdir(parents=True, exist_ok=True)
 
-    prepared = _prepare_dataset(_attach_features(dataset, features))
-    regressor = joblib.load(model_path)
-    predictions = _build_inference_predictions(prepared, regressor)
+    predictions = predict_ml_baseline(dataset, model_path, features)
 
     paths = {
-        "ml_predictions_csv": ml_dir / "ml_predictions.csv",
         "ml_predictions_parquet": ml_dir / "ml_predictions.parquet",
         "ml_metrics_json": ml_dir / "ml_metrics.json",
         "ml_report": ml_dir / "ml_baseline_report.md",
-        "rul_model": ml_dir / "random_forest_rul.joblib",
+        "rul_model": model_path,
     }
-    predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
+    if export_csv:
+        paths["ml_predictions_csv"] = ml_dir / "ml_predictions.csv"
+        predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
     predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
-    shutil.copy2(model_path, paths["rul_model"])
 
     if cached_metrics_path and cached_metrics_path.exists():
-        shutil.copy2(cached_metrics_path, paths["ml_metrics_json"])
+        paths["ml_metrics_json"].write_bytes(cached_metrics_path.read_bytes())
     else:
         metrics = {
             "input_columns": ML_INPUT_COLUMNS,
@@ -121,14 +121,25 @@ def predict_and_export_ml_baseline(
         )
 
     if cached_report_path and cached_report_path.exists():
-        shutil.copy2(cached_report_path, paths["ml_report"])
+        paths["ml_report"].write_bytes(cached_report_path.read_bytes())
     else:
         paths["ml_report"].write_text(
             "# ML baseline\n\nИспользована готовая модель для inference текущего запуска.\n",
             encoding="utf-8",
         )
 
-    return paths
+    return predictions, paths
+
+
+def predict_ml_baseline(
+    dataset: pd.DataFrame,
+    model_path: Path,
+    features: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Строит inference-прогноз в памяти без переобучения и файлового round-trip."""
+    prepared = _prepare_dataset(_attach_features(dataset, features))
+    regressor = joblib.load(model_path)
+    return _build_inference_predictions(prepared, regressor)
 
 
 def _prepare_dataset(dataset: pd.DataFrame) -> pd.DataFrame:

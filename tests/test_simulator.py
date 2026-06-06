@@ -88,3 +88,4 @@ def test_export_run_writes_canonical_dataset_schema(tmp_path) -> None:
     assert list(dataset.columns) == CANONICAL_DATASET_COLUMNS
     assert paths["dataset_csv"].exists()
     assert paths["dataset_schema"].exists()
+    assert not any("_ru" in name for name in paths)

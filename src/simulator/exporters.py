@@ -80,58 +80,6 @@ ML_FORBIDDEN_INPUT_COLUMNS = [
     "state",
 ]
 
-RU_COLUMN_NAMES = {
-    "run_id": "идентификатор_прогона",
-    "timestamp": "время",
-    "filter_id": "идентификатор_фильтра",
-    "scenario_id": "сценарий",
-    "q_true_m3h": "истинный_расход_м3_ч",
-    "p_in_true_mpa": "истинное_входное_давление_мпа",
-    "t_true_c": "истинная_температура_с",
-    "p_out_true_mpa": "истинное_выходное_давление_мпа",
-    "delta_p_true_kpa": "истинный_перепад_давления_кпа",
-    "resistance_factor": "коэффициент_сопротивления",
-    "clog_level": "уровень_засорения",
-    "maintenance_event": "событие_обслуживания",
-    "p_in_mpa": "входное_давление_мпа",
-    "p_out_mpa": "выходное_давление_мпа",
-    "delta_p_kpa": "перепад_давления_кпа",
-    "q_m3h": "расход_м3_ч",
-    "t_c": "температура_с",
-    "quality_code": "код_качества",
-    "state_true": "истинное_состояние",
-    "state_obs": "наблюдаемое_состояние",
-    "alarm_flag": "флаг_тревоги",
-    "rul_oracle_h": "остаточный_ресурс_oracle_ч",
-    "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "is_rul_unknown": "rul_неизвестен",
-    "delta_p_norm_q2": "перепад_нормированный_по_расходу",
-    "rule_health_index": "индекс_состояния_по_правилу",
-}
-
-RU_VALUE_MAPS = {
-    "quality_code": {
-        "good": "хорошие данные",
-        "missing": "есть пропуски",
-        "invalid": "некорректные данные",
-    },
-    "state_true": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "state_obs": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "alarm_flag": {True: "да", False: "нет"},
-    "maintenance_event": {True: "да", False: "нет"},
-    "is_rul_unknown": {True: "да", False: "нет"},
-}
-
 OPERATION_DESCRIPTIONS = [
     {
         "step": "1. Загрузка конфигурации",
@@ -171,13 +119,18 @@ OPERATION_DESCRIPTIONS = [
     },
     {
         "step": "10. Экспорт",
-        "description": "Сохранение наблюдаемых данных, скрытых меток, полного debug-набора, русских CSV и metadata.json.",
+        "description": "Сохранение наблюдаемых данных, скрытых меток, полного debug-набора и metadata.json.",
     },
 ]
 
 
 def export_run(
-    cfg: ScenarioConfig, df: pd.DataFrame, report: QCReport, output_dir: Path
+    cfg: ScenarioConfig,
+    df: pd.DataFrame,
+    report: QCReport,
+    output_dir: Path,
+    *,
+    export_csv: bool = True,
 ) -> dict[str, Path]:
     """Сохраняет наблюдаемые данные, истинные метки, debug-набор и метаданные прогона."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -186,34 +139,34 @@ def export_run(
     raw = df[OBSERVED_COLUMNS]
     truth = df[TRUTH_COLUMNS]
     paths = {
-        "raw_observed_csv": output_dir / "raw_observed.csv",
         "raw_observed_parquet": output_dir / "raw_observed.parquet",
-        "truth_labels_csv": output_dir / "truth_labels.csv",
         "truth_labels_parquet": output_dir / "truth_labels.parquet",
-        "wide_debug_csv": output_dir / "wide_debug.csv",
         "wide_debug_parquet": output_dir / "wide_debug.parquet",
-        "raw_observed_ru_csv": output_dir / "raw_observed_ru.csv",
-        "truth_labels_ru_csv": output_dir / "truth_labels_ru.csv",
-        "wide_debug_ru_csv": output_dir / "wide_debug_ru.csv",
         "operations_description": output_dir / "operations_description.md",
         "metadata": output_dir / "metadata.json",
-        "dataset_csv": output_dir / "dataset.csv",
         "dataset_parquet": output_dir / "dataset.parquet",
         "dataset_schema": output_dir / "dataset_schema.md",
     }
+    if export_csv:
+        paths.update(
+            {
+                "raw_observed_csv": output_dir / "raw_observed.csv",
+                "truth_labels_csv": output_dir / "truth_labels.csv",
+                "wide_debug_csv": output_dir / "wide_debug.csv",
+                "dataset_csv": output_dir / "dataset.csv",
+            }
+        )
 
     dataset = build_canonical_dataset(cfg, df)
-    raw.to_csv(paths["raw_observed_csv"], index=False, encoding="utf-8")
+    if export_csv:
+        raw.to_csv(paths["raw_observed_csv"], index=False, encoding="utf-8")
+        truth.to_csv(paths["truth_labels_csv"], index=False, encoding="utf-8")
+        df.to_csv(paths["wide_debug_csv"], index=False, encoding="utf-8")
+        dataset.to_csv(paths["dataset_csv"], index=False, encoding="utf-8")
     raw.to_parquet(paths["raw_observed_parquet"], index=False)
-    truth.to_csv(paths["truth_labels_csv"], index=False, encoding="utf-8")
     truth.to_parquet(paths["truth_labels_parquet"], index=False)
-    df.to_csv(paths["wide_debug_csv"], index=False, encoding="utf-8")
     df.to_parquet(paths["wide_debug_parquet"], index=False)
-    _to_russian_csv(raw, paths["raw_observed_ru_csv"])
-    _to_russian_csv(truth, paths["truth_labels_ru_csv"])
-    _to_russian_csv(df, paths["wide_debug_ru_csv"])
     paths["operations_description"].write_text(_operations_markdown(), encoding="utf-8")
-    dataset.to_csv(paths["dataset_csv"], index=False, encoding="utf-8")
     dataset.to_parquet(paths["dataset_parquet"], index=False)
     paths["dataset_schema"].write_text(_dataset_schema_markdown(), encoding="utf-8")
 
@@ -226,7 +179,6 @@ def export_run(
         "canonical_dataset_columns": CANONICAL_DATASET_COLUMNS,
         "ml_input_columns": ML_INPUT_COLUMNS,
         "ml_forbidden_input_columns": ML_FORBIDDEN_INPUT_COLUMNS,
-        "russian_column_names": RU_COLUMN_NAMES,
         "operation_descriptions": OPERATION_DESCRIPTIONS,
         "config": cfg.model_dump(mode="json"),
         "config_hash_sha256": _config_hash(cfg),
@@ -275,16 +227,6 @@ def build_canonical_dataset(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFra
     return dataset[CANONICAL_DATASET_COLUMNS]
 
 
-def _to_russian_csv(df: pd.DataFrame, path: Path) -> None:
-    """Создает CSV для чтения человеком: русские заголовки и русские значения категорий."""
-    localized = df.copy()
-    for column, value_map in RU_VALUE_MAPS.items():
-        if column in localized.columns:
-            localized[column] = localized[column].replace(value_map)
-    localized = localized.rename(columns={key: value for key, value in RU_COLUMN_NAMES.items() if key in localized.columns})
-    localized.to_csv(path, index=False, encoding="utf-8-sig")
-
-
 def _operations_markdown() -> str:
     """Формирует текстовое описание операций симулятора для отчетных артефактов."""
     lines = ["# Описание операций симулятора", ""]
@@ -296,12 +238,9 @@ def _operations_markdown() -> str:
     lines.append("## Выходные файлы")
     lines.append("")
     lines.append("- `raw_observed.csv` - машинно-читаемая наблюдаемая телеметрия с англоязычными колонками.")
-    lines.append("- `raw_observed_ru.csv` - та же наблюдаемая телеметрия с русскими заголовками и значениями состояний.")
     lines.append("- `truth_labels.csv` - скрытые состояния и целевые метки для обучения/оценки моделей.")
-    lines.append("- `truth_labels_ru.csv` - русифицированная версия скрытых состояний и меток.")
     lines.append("- `wide_debug.csv` - полный отладочный набор с наблюдаемыми и истинными каналами.")
-    lines.append("- `wide_debug_ru.csv` - русифицированная версия полного отладочного набора.")
-    lines.append("- `metadata.json` - конфигурация, seed, QC-отчет, словарь русских колонок и описание операций.")
+    lines.append("- `metadata.json` - конфигурация, seed, QC-отчет и описание операций.")
     lines.append("")
     return "\n".join(lines)
 

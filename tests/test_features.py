@@ -55,5 +55,6 @@ def test_export_features_creates_files(tmp_path) -> None:
     paths = export_features(cfg, features, tmp_path)
 
     assert all(path.exists() and path.stat().st_size > 0 for path in paths.values())
+    assert not any("_ru" in name for name in paths)
     exported = pd.read_parquet(paths["features_parquet"])
     assert list(exported.columns) == list(features.columns)

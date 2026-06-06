@@ -46,7 +46,7 @@ def test_ml_baseline_predicts_from_exported_model(tmp_path) -> None:
     features = build_features(cfg, df)
 
     train_paths = train_and_export_ml_baseline(dataset, tmp_path / "train", features)
-    predict_paths = predict_and_export_ml_baseline(
+    predictions, predict_paths = predict_and_export_ml_baseline(
         dataset,
         tmp_path / "predict",
         train_paths["rul_model"],
@@ -55,7 +55,6 @@ def test_ml_baseline_predicts_from_exported_model(tmp_path) -> None:
         cached_report_path=train_paths["ml_report"],
     )
 
-    predictions = pd.read_parquet(predict_paths["ml_predictions_parquet"])
     assert all(path.exists() and path.stat().st_size > 0 for path in predict_paths.values())
     assert set(predictions["split"]) == {"inference"}
     assert len(predictions) == len(dataset)

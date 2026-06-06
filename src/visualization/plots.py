@@ -52,15 +52,9 @@ def build_plots(
         "q": plot_dir / "01_rashod_q.png",
         "pressure": plot_dir / "02_davleniya_pin_pout.png",
         "delta_p": plot_dir / "03_perepad_delta_p.png",
-        "clog": plot_dir / "04_zasorenie_clog_level.png",
-        "rul": plot_dir / "05_ostatochnyi_resurs_rul.png",
         "state": plot_dir / "06_sostoyanie_filtra.png",
-        "delta_p_norm": plot_dir / "07_normirovannyi_perepad.png",
-        "delta_p_vs_clog": plot_dir / "08_delta_p_i_zasorenie.png",
         "rul_comparison": plot_dir / "09_sravnenie_rul.png",
-        "hybrid_decision": plot_dir / "10_gibridnoe_reshenie.png",
         "rul_source_periods": plot_dir / "11_periodi_predpochteniya_rul.png",
-        "dashboard": plot_dir / "00_obzornyi_dashboard.png",
         "description": plot_dir / "plots_description.md",
         "diagnostics": plot_dir / "plot_diagnostics.md",
     }
@@ -68,15 +62,21 @@ def build_plots(
     _plot_q(data, paths["q"])
     _plot_pressure(data, paths["pressure"])
     _plot_delta_p(cfg, data, paths["delta_p"])
-    _plot_clog(data, paths["clog"])
-    _plot_rul(data, paths["rul"])
     _plot_state(cfg, data, paths["state"], decision_cards)
-    _plot_delta_p_norm(cfg, data, paths["delta_p_norm"])
-    _plot_delta_p_vs_clog(cfg, data, paths["delta_p_vs_clog"])
     _plot_rul_comparison(cfg, data, hybrid_decisions, paths["rul_comparison"])
-    _plot_hybrid_decision_window(cfg, data, hybrid_decisions, paths["hybrid_decision"])
     _plot_rul_source_periods(cfg, hybrid_decisions, paths["rul_source_periods"])
-    _plot_dashboard(cfg, data, paths["dashboard"])
+
+    # These plots are intentionally disabled because they are not displayed in the UI.
+    # Keep the calls here so they can be restored without reconstructing the orchestration.
+    # _plot_clog(data, plot_dir / "04_zasorenie_clog_level.png")
+    # _plot_rul(data, plot_dir / "05_ostatochnyi_resurs_rul.png")
+    # _plot_delta_p_norm(cfg, data, plot_dir / "07_normirovannyi_perepad.png")
+    # _plot_delta_p_vs_clog(cfg, data, plot_dir / "08_delta_p_i_zasorenie.png")
+    # _plot_hybrid_decision_window(
+    #     cfg, data, hybrid_decisions, plot_dir / "10_gibridnoe_reshenie.png"
+    # )
+    # _plot_dashboard(cfg, data, plot_dir / "00_obzornyi_dashboard.png")
+
     paths["description"].write_text(_description(), encoding="utf-8")
     paths["diagnostics"].write_text(_diagnostics(cfg, data), encoding="utf-8")
     return paths
@@ -756,27 +756,21 @@ def _save(fig: plt.Figure, path: Path) -> None:
 
 
 def _description() -> str:
-    """Создает markdown-описание назначений всех графиков."""
+    """Создает markdown-описание графиков, включенных в текущий UI pipeline."""
     return "\n".join(
         [
             "# Описание графиков",
             "",
-            "- `00_obzornyi_dashboard.png` - все ключевые каналы на одном обзорном листе.",
             "- `01_rashod_q.png` - расход газа Q(t).",
             "- `02_davleniya_pin_pout.png` - входное и выходное давление.",
             "- `03_perepad_delta_p.png` - наблюдаемый перепад давления с порогами warning/critical и 24-часовым средним.",
-            "- `04_zasorenie_clog_level.png` - скрытый уровень засорения фильтра.",
-            "- `05_ostatochnyi_resurs_rul.png` - oracle и аналитический остаточный ресурс.",
             f"- `06_sostoyanie_filtra.png` - raw-состояние, устойчивое состояние по сглаженному `deltaP_norm` и вертикальные отметки карточек решений, окно {STATE_SMOOTH_HOURS} ч.",
-            "- `07_normirovannyi_perepad.png` - перепад, нормированный на расход, с порогами warning/critical.",
-            "- `08_delta_p_i_zasorenie.png` - основной диагностический график для сравнения deltaP и clog_level.",
             "- `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL с порогами обслуживания.",
-            "- `10_gibridnoe_reshenie.png` - репрезентативное окно принятия решения: ML/analytic/fused RUL, confidence, источник RUL и действие.",
             "- `11_periodi_predpochteniya_rul.png` - полный временной ряд: в какие периоды итоговый RUL берется из ML, аналитики, conservative min или fallback; нижняя панель показывает недельные количества решений по источникам.",
             "",
-            "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
+            "Остальные функции построения графиков сохранены в коде, но их вызовы отключены в `build_plots`, поскольку UI их не отображает.",
             "",
-            "Гибридность системы лучше всего смотреть на `10_gibridnoe_reshenie.png`: там видно, что итоговый RUL не является одной моделью, а выбирается из ML, аналитики или консервативного минимума с учетом confidence и качества данных.",
+            "Сырой deltaP зависит не только от засорения, но и от расхода. Поэтому для оценки тренда полезнее смотреть 24-часовое среднее и `deltaP_norm`.",
             "",
             "На графике состояния исходный `state_obs` оставлен полупрозрачным, а основная линия строится по сглаженному `deltaP_norm`. Краткие `unknown` из-за пропусков показываются как индикатор качества данных, но не ломают устойчивый тренд состояния.",
             "",

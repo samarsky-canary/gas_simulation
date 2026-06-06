@@ -75,6 +75,7 @@ def test_export_hybrid_decisions_creates_files(tmp_path) -> None:
     paths = export_hybrid_decisions(decisions, tmp_path)
 
     assert all(path.exists() and path.stat().st_size > 0 for path in paths.values())
+    assert not any("_ru" in name for name in paths)
     cards = paths["hybrid_decision_cards_md"].read_text(encoding="utf-8")
     packages = paths["hybrid_decision_packages_jsonl"].read_text(encoding="utf-8")
     assert "Почему:" in cards

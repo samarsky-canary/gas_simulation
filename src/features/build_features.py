@@ -31,41 +31,6 @@ FEATURE_EXPORT_COLUMNS = [
     "is_rul_unknown",
 ]
 
-RU_FEATURE_COLUMNS = {
-    "run_id": "идентификатор_прогона",
-    "timestamp": "время",
-    "filter_id": "идентификатор_фильтра",
-    "scenario_id": "сценарий",
-    "deltaP_norm_kPa": "перепад_без_влияния_расхода_кпа",
-    "deltaP_roll_mean_1h": "средний_перепад_за_1ч_кпа",
-    "deltaP_roll_std_1h": "нестабильность_перепада_за_1ч_кпа",
-    "deltaP_slope_6h": "скорость_роста_перепада_за_6ч_кпа_ч",
-    "Q_roll_mean_1h": "средний_расход_за_1ч_м3_ч",
-    "missing_rate_1h": "доля_пропусков_за_1ч",
-    "time_above_warn": "время_выше_warning_ч",
-    "state_obs": "наблюдаемое_состояние",
-    "state_true": "истинное_состояние",
-    "rul_oracle_h": "остаточный_ресурс_oracle_ч",
-    "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "is_rul_unknown": "rul_неизвестен",
-}
-
-RU_VALUE_MAPS = {
-    "state_obs": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "state_true": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "is_rul_unknown": {True: "да", False: "нет"},
-}
-
 FEATURE_DESCRIPTIONS = [
     {
         "name": "deltaP_norm_kPa",
@@ -150,17 +115,22 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     return features[FEATURE_EXPORT_COLUMNS]
 
 
-def export_features(cfg: ScenarioConfig, features: pd.DataFrame, output_dir: Path) -> dict[str, Path]:
-    """Экспортирует признаки в CSV/Parquet, русскую CSV-версию и описание формул."""
+def export_features(
+    cfg: ScenarioConfig,
+    features: pd.DataFrame,
+    output_dir: Path,
+    *,
+    export_csv: bool = True,
+) -> dict[str, Path]:
+    """Экспортирует признаки в Parquet, опциональный CSV и описание формул."""
     paths = {
-        "features_csv": output_dir / "features.csv",
         "features_parquet": output_dir / "features.parquet",
-        "features_ru_csv": output_dir / "features_ru.csv",
         "feature_description": output_dir / "feature_description.md",
     }
-    features.to_csv(paths["features_csv"], index=False, encoding="utf-8")
+    if export_csv:
+        paths["features_csv"] = output_dir / "features.csv"
+        features.to_csv(paths["features_csv"], index=False, encoding="utf-8")
     features.to_parquet(paths["features_parquet"], index=False)
-    _to_russian_csv(features, paths["features_ru_csv"])
     paths["feature_description"].write_text(_feature_description(cfg), encoding="utf-8")
     return paths
 
@@ -182,16 +152,6 @@ def _slope(values: np.ndarray, dt_h: float) -> float:
     if denom == 0:
         return 0.0
     return float(np.dot(x_centered, y - y.mean()) / denom)
-
-
-def _to_russian_csv(features: pd.DataFrame, path: Path) -> None:
-    """Создает русифицированный CSV с признаками для просмотра и отчета."""
-    localized = features.copy()
-    for column, value_map in RU_VALUE_MAPS.items():
-        if column in localized.columns:
-            localized[column] = localized[column].replace(value_map)
-    localized = localized.rename(columns=RU_FEATURE_COLUMNS)
-    localized.to_csv(path, index=False, encoding="utf-8-sig")
 
 
 def _feature_description(cfg: ScenarioConfig) -> str:
@@ -216,7 +176,6 @@ def _feature_description(cfg: ScenarioConfig) -> str:
             "",
             "- `features.csv` - машинно-читаемая таблица признаков.",
             "- `features.parquet` - основной аналитический формат признаков.",
-            "- `features_ru.csv` - русифицированная версия для просмотра.",
             "- `feature_description.md` - это описание признаков и формул.",
             "",
         ]

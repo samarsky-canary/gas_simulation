@@ -12,7 +12,17 @@ def test_build_plots_creates_png_files(tmp_path) -> None:
     paths = build_plots(cfg, df, tmp_path)
 
     png_paths = [path for path in paths.values() if path.suffix == ".png"]
-    assert png_paths
+    assert set(paths) == {
+        "q",
+        "pressure",
+        "delta_p",
+        "state",
+        "rul_comparison",
+        "rul_source_periods",
+        "description",
+        "diagnostics",
+    }
+    assert len(png_paths) == 6
     assert all(path.exists() and path.stat().st_size > 0 for path in png_paths)
     assert paths["description"].exists()
     assert paths["diagnostics"].exists()

@@ -14,6 +14,15 @@ Streamlit-интерфейс для демонстрации:
 streamlit run app.py
 ```
 
+ML-модель обучается отдельно и переиспользуется всеми запусками:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --train-ml
+```
+
+Обычный запуск и Streamlit выполняют только inference. Если общий ML-кэш отсутствует,
+система попросит выполнить команду обучения.
+
 ## Запуск в Docker
 
 Сборка и запуск контейнера:
@@ -32,32 +41,26 @@ docker run --rm -p 8501:8501 -v ${PWD}/outputs:/app/outputs gas-simulation:lates
 docker compose up --build
 ```
 
-Результаты пишутся в `outputs/<scenario_name>/`:
+Результаты обычного pipeline пишутся в `outputs/<scenario_name>/`. Для больших таблиц
+pipeline сохраняет только Parquet, чтобы не дублировать сериализацию в CSV:
 
-- `dataset.csv` / `dataset.parquet` - зафиксированный основной датасет с финальным контрактом колонок.
+- `dataset.parquet` - зафиксированный основной датасет с финальным контрактом колонок.
 - `dataset_schema.md` - описание колонок, разрешенных входов ML-моделей и запрещенных скрытых/целевых полей.
-- `raw_observed.csv` / `raw_observed.parquet` - наблюдаемая телеметрия и QC.
-- `raw_observed_ru.csv` - наблюдаемая телеметрия с русскими заголовками и русифицированными состояниями.
-- `truth_labels.csv` / `truth_labels.parquet` - скрытые состояния и целевые метки.
-- `truth_labels_ru.csv` - скрытые состояния и метки с русскими заголовками.
-- `wide_debug.csv` / `wide_debug.parquet` - полный набор для отладки.
-- `wide_debug_ru.csv` - полный отладочный набор с русскими заголовками.
+- `raw_observed.parquet` - наблюдаемая телеметрия и QC.
+- `truth_labels.parquet` - скрытые состояния и целевые метки.
+- `wide_debug.parquet` - полный набор для отладки.
 - `operations_description.md` - описание операций симулятора от загрузки конфига до экспорта.
-- `metadata.json` - конфигурация, seed, версия схемы, QC-отчет, словарь русских колонок и описание операций.
+- `metadata.json` - конфигурация, seed, версия схемы, QC-отчет и описание операций.
 - `plots/` - PNG-графики для визуальной проверки временных рядов.
-- `features.csv` / `features.parquet` - таблица признаков для baseline-моделей и интерпретации правил.
-- `features_ru.csv` - русифицированная таблица признаков.
+- `features.parquet` - таблица признаков для baseline-моделей и интерпретации правил.
 - `feature_description.md` - описание признаков, формул и назначения.
-- `rule_baseline.csv` / `rule_baseline.parquet` - результат регламентно-логической baseline-модели.
-- `rule_baseline_ru.csv` - русифицированный результат rule-based baseline.
+- `rule_baseline.parquet` - результат регламентно-логической baseline-модели.
 - `rule_baseline_description.md` - описание правил состояния и рекомендаций.
 - `ml_baseline/` - модели RandomForest, предсказания и метрики классического ML-baseline.
 
-Англоязычные CSV/Parquet оставлены как стабильная машинная схема для кода, ML и последующей обработки. Русские CSV предназначены для просмотра, отчета и ручной проверки.
-
 ## Формат Датасета
 
-Основной фиксированный формат находится в `dataset.csv` и `dataset.parquet`:
+Основной фиксированный формат находится в `dataset.parquet`:
 
 - `run_id`
 - `timestamp`
@@ -92,10 +95,10 @@ docker compose up --build
 9. Расчет диагностических состояний, тревоги и RUL.
 10. Расчет признаков для baseline-моделей и интерпретации правил.
 11. Расчет rule-based baseline: состояние фильтра и рекомендация обслуживания.
-12. Обучение классического ML-baseline: RandomForestRegressor для RUL.
+12. Inference готового ML-baseline RandomForestRegressor для RUL.
 13. Построение гибридных решений на основе ML-прогноза, аналитического RUL и правил.
-14. Экспорт CSV, Parquet, metadata и русифицированных отчетных файлов.
-15. Построение графиков по расходу, давлениям, перепаду, засорению, RUL, состоянию и нормированному перепаду.
+14. Экспорт Parquet и metadata без дублирующих CSV.
+15. Построение только графиков, доступных в Streamlit UI.
 
 ## Признаки
 
@@ -135,7 +138,7 @@ Feature builder создает минимальный набор признак�
 
 ## ML Baseline
 
-В текущей версии обучается классический ML baseline:
+В текущей версии классический ML baseline обучается отдельной командой:
 
 - `RandomForestRegressor` прогнозирует `RUL_oracle_h`.
 - Для ML генерируется корпус из нескольких независимых `run_id` с разными `scenario_name` и `seed`.
@@ -147,7 +150,6 @@ Feature builder создает минимальный набор признак�
 Артефакты лежат в `outputs/<scenario_name>/ml_baseline/`:
 
 - `random_forest_rul.joblib`
-- `ml_predictions.csv`
 - `ml_predictions.parquet`
 - `ml_metrics.json`
 - `ml_baseline_report.md`
@@ -156,19 +158,13 @@ Feature builder создает минимальный набор признак�
 
 ## Графики
 
-После запуска в `outputs/<scenario_name>/plots/` создаются:
+После запуска в `outputs/<scenario_name>/plots/` создаются только графики Streamlit UI:
 
-- `00_obzornyi_dashboard.png` - все ключевые каналы на одном листе.
 - `01_rashod_q.png` - расход газа `Q(t)`.
 - `02_davleniya_pin_pout.png` - `P_in(t)` и `P_out(t)`.
 - `03_perepad_delta_p.png` - `deltaP(t)` с порогами и 24-часовым средним.
-- `04_zasorenie_clog_level.png` - скрытое засорение `clog_level(t)`.
-- `05_ostatochnyi_resurs_rul.png` - `RUL(t)`.
 - `06_sostoyanie_filtra.png` - состояние фильтра `state(t)`.
-- `07_normirovannyi_perepad.png` - нормированный перепад `deltaP_norm(t)`.
-- `08_delta_p_i_zasorenie.png` - сравнение `deltaP(t)` и `clog_level(t)`.
 - `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL.
-- `10_gibridnoe_reshenie.png` - окно принятия гибридного решения: RUL, confidence, источник RUL и действие.
 - `11_periodi_predpochteniya_rul.png` - периоды, когда система предпочитает ML, аналитику или conservative min.
 - `plot_diagnostics.md` - численная проверка связи `deltaP` и `clog_level`.
 
@@ -185,7 +181,7 @@ src/simulator/
   physics.py      # deltaP_true и P_out_true
   faults.py       # шумы, пропуски, выбросы, залипания
   labels.py       # state, alarm, RUL_oracle, RUL_analytic
-  exporters.py    # CSV/Parquet/metadata
+  exporters.py    # Parquet/metadata и опциональный CSV
   runner.py       # сборка одного прогона
 ```
 

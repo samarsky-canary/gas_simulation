@@ -56,3 +56,4 @@ def test_export_rule_baseline_creates_files(tmp_path) -> None:
     paths = export_rule_baseline(cfg, baseline, tmp_path)
 
     assert all(path.exists() and path.stat().st_size > 0 for path in paths.values())
+    assert not any("_ru" in name for name in paths)

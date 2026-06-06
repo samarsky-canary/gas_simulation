@@ -26,57 +26,6 @@ RULE_COLUMNS = [
     "rul_oracle_h",
 ]
 
-RU_COLUMNS = {
-    "run_id": "идентификатор_прогона",
-    "timestamp": "время",
-    "filter_id": "идентификатор_фильтра",
-    "scenario_id": "сценарий",
-    "delta_p_kpa": "перепад_давления_кпа",
-    "delta_p_norm_kpa": "нормированный_перепад_давления_кпа",
-    "rul_analytic_h": "остаточный_ресурс_аналитический_ч",
-    "quality_code": "код_качества",
-    "rule_state": "состояние_по_правилам",
-    "rule_alarm_flag": "тревога_по_правилам",
-    "rule_recommendation": "рекомендация_по_правилам",
-    "rule_reason": "обоснование_правила",
-    "state_obs": "наблюдаемое_состояние_симулятора",
-    "state_true": "истинное_состояние",
-    "rul_oracle_h": "остаточный_ресурс_oracle_ч",
-}
-
-RU_VALUES = {
-    "quality_code": {
-        "good": "хорошие данные",
-        "missing": "есть пропуски",
-        "invalid": "некорректные данные",
-    },
-    "rule_state": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "state_obs": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "state_true": {
-        "normal": "норма",
-        "warning": "предупреждение",
-        "critical": "критическое",
-        "unknown": "неизвестно",
-    },
-    "rule_alarm_flag": {True: "да", False: "нет"},
-    "rule_recommendation": {
-        "continue_monitoring": "продолжить мониторинг",
-        "planned_maintenance": "плановое обслуживание",
-        "urgent_maintenance": "срочное обслуживание",
-        "inspect_sensor_data": "проверить качество данных",
-    },
-}
-
 
 def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Применяет пороговые правила состояния и рекомендации обслуживания."""
@@ -110,18 +59,21 @@ def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
 
 
 def export_rule_baseline(
-    cfg: ScenarioConfig, baseline: pd.DataFrame, output_dir: Path
+    cfg: ScenarioConfig,
+    baseline: pd.DataFrame,
+    output_dir: Path,
+    *,
+    export_csv: bool = True,
 ) -> dict[str, Path]:
     """Сохраняет результат rule-based baseline и описание примененных правил."""
     paths = {
-        "rule_baseline_csv": output_dir / "rule_baseline.csv",
         "rule_baseline_parquet": output_dir / "rule_baseline.parquet",
-        "rule_baseline_ru_csv": output_dir / "rule_baseline_ru.csv",
         "rule_baseline_description": output_dir / "rule_baseline_description.md",
     }
-    baseline.to_csv(paths["rule_baseline_csv"], index=False, encoding="utf-8")
+    if export_csv:
+        paths["rule_baseline_csv"] = output_dir / "rule_baseline.csv"
+        baseline.to_csv(paths["rule_baseline_csv"], index=False, encoding="utf-8")
     baseline.to_parquet(paths["rule_baseline_parquet"], index=False)
-    _to_russian_csv(baseline, paths["rule_baseline_ru_csv"])
     paths["rule_baseline_description"].write_text(_description(cfg), encoding="utf-8")
     return paths
 
@@ -148,16 +100,6 @@ def _reason(cfg: ScenarioConfig, row: pd.Series) -> str:
     else:
         rec_rule = "no maintenance threshold reached"
     return f"{state_rule}; {rec_rule}"
-
-
-def _to_russian_csv(baseline: pd.DataFrame, path: Path) -> None:
-    """Создает русифицированную таблицу результата rule-based baseline."""
-    localized = baseline.copy()
-    for column, mapping in RU_VALUES.items():
-        if column in localized.columns:
-            localized[column] = localized[column].replace(mapping)
-    localized = localized.rename(columns=RU_COLUMNS)
-    localized.to_csv(path, index=False, encoding="utf-8-sig")
 
 
 def _delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
@@ -192,7 +134,6 @@ def _description(cfg: ScenarioConfig) -> str:
             "",
             "- `rule_baseline.csv` - машинно-читаемый результат правил.",
             "- `rule_baseline.parquet` - аналитический формат результата правил.",
-            "- `rule_baseline_ru.csv` - русифицированная версия результата правил.",
             "- `rule_baseline_description.md` - описание логики правил.",
             "",
         ]
