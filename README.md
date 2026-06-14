@@ -17,11 +17,13 @@ streamlit run app.py
 ML-модель обучается отдельно и переиспользуется всеми запусками:
 
 ```powershell
+$env:DATABASE_URL="postgresql://gas_simulation:gas_simulation@localhost:5432/gas_simulation"
 .\.venv\Scripts\python.exe main.py --train-ml
 ```
 
-Обычный запуск и Streamlit выполняют только inference. Если общий ML-кэш отсутствует,
-система попросит выполнить команду обучения.
+Сведения об обучении, метрики, Markdown-отчет и бинарный `joblib`-артефакт хранятся
+в PostgreSQL. Обычный запуск и Streamlit выполняют только inference по последнему
+успешному обучению. Если записи нет, система попросит выполнить команду обучения.
 
 ## Запуск в Docker
 
@@ -29,16 +31,27 @@ ML-модель обучается отдельно и переиспользу�
 
 ```powershell
 docker build -t gas-simulation:latest .
-docker run --rm -p 8501:8501 -v ${PWD}/outputs:/app/outputs gas-simulation:latest
+docker run --rm -p 8501:8501 -v ${PWD}/outputs:/app/outputs `
+  -e DATABASE_URL="postgresql://user:password@host.docker.internal:5432/gas_simulation" `
+  gas-simulation:latest
 ```
 
 После запуска приложение доступно по адресу `http://localhost:8501`.
 Результаты UI-прогонов сохраняются в локальный каталог `outputs/`.
+Для одиночного контейнера PostgreSQL должен быть запущен отдельно.
 
 Альтернативно можно запустить через Docker Compose:
 
 ```powershell
 docker compose up --build
+```
+
+Compose поднимает PostgreSQL и приложение. Перед первым запуском inference нужно
+однократно зарегистрировать модель:
+
+```powershell
+docker compose run --rm gas-simulation python main.py --train-ml
+docker compose up
 ```
 
 Результаты обычного pipeline пишутся в `outputs/<scenario_name>/`. Для больших таблиц
@@ -56,7 +69,19 @@ pipeline сохраняет только Parquet, чтобы не дублиро
 - `feature_description.md` - описание признаков, формул и назначения.
 - `rule_baseline.parquet` - результат регламентно-логической baseline-модели.
 - `rule_baseline_description.md` - описание правил состояния и рекомендаций.
-- `ml_baseline/` - модели RandomForest, предсказания и метрики классического ML-baseline.
+- `ml_baseline/` - предсказания и копия метрик/отчета использованного обучения.
+
+## Хранение обучений
+
+PostgreSQL использует две таблицы:
+
+- `ml_models` - логические модели и их типы.
+- `ml_training_runs` - версии обучений, split, размеры выборок, JSON-метрики,
+  отчет, SHA-256 и сериализованный артефакт модели.
+
+Схема создается автоматически приложением и также зафиксирована в `db/init.sql`.
+Подключение задается обязательной переменной `DATABASE_URL`.
+Пример локальных переменных находится в `.env.example`.
 
 ## Формат Датасета
 
@@ -147,9 +172,9 @@ Feature builder создает минимальный набор признак�
 - Входы: разрешенные наблюдаемые поля плюс инженерные признаки feature builder.
 - Скрытые и целевые поля `clog_level`, `RUL_oracle_h`, `state` не используются как входы.
 
-Артефакты лежат в `outputs/<scenario_name>/ml_baseline/`:
+Артефакт модели и история обучений лежат в PostgreSQL. Для каждого inference-запуска
+в `outputs/<scenario_name>/ml_baseline/` сохраняются:
 
-- `random_forest_rul.joblib`
 - `ml_predictions.parquet`
 - `ml_metrics.json`
 - `ml_baseline_report.md`

@@ -120,20 +120,24 @@ package "Прогнозирование" {
     --
     model_name : varchar
     model_type : varchar
-    artifact_path : text
-    input_columns_json : jsonb
-    created_at : timestamp
+    created_at : timestamptz
   }
 
   entity "ml_training_runs\nОбучения ML" as ml_training {
     * training_id : uuid <<PK>>
     --
     model_id : uuid <<FK>>
-    train_started_at : timestamp
+    status : varchar
+    trained_at : timestamptz
     split_type : varchar
     train_rows : integer
     test_rows : integer
-    metrics_json : jsonb
+    input_columns : jsonb
+    metrics : jsonb
+    report_markdown : text
+    artifact_format : varchar
+    artifact_sha256 : char(64)
+    artifact : bytea
   }
 
   entity "ml_predictions\nML-прогнозы RUL" as ml_predictions {

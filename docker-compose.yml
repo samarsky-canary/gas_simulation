@@ -1,9 +1,35 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gas_simulation}
+      POSTGRES_USER: ${POSTGRES_USER:-gas_simulation}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gas_simulation}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gas_simulation} -d ${POSTGRES_DB:-gas_simulation}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   gas-simulation:
     build: .
     image: gas-simulation:latest
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-gas_simulation}:${POSTGRES_PASSWORD:-gas_simulation}@postgres:5432/${POSTGRES_DB:-gas_simulation}
     ports:
       - "8501:8501"
     volumes:
       - ./outputs:/app/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres-data:

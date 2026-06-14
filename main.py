@@ -12,11 +12,12 @@ from src.hybrid import (
     export_hybrid_decisions,
     format_console_decision_summary,
 )
-from src.ml import predict_and_export_ml_baseline, train_and_export_ml_baseline
+from src.ml import predict_and_export_ml_baseline, train_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
 from src.simulator.config import SCENARIO_OVERRIDES, ScenarioConfig, load_config
 from src.simulator.exporters import build_canonical_dataset, export_run
 from src.simulator.runner import run_scenario
+from src.storage import StoredMLTraining, TrainingRepository
 from src.visualization import build_plots
 
 
@@ -57,9 +58,6 @@ ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
 ML_STRESS_TEST_SEEDS = (42,)
 ML_CORPUS_MIN_DURATION_DAYS = 90
-ML_CACHE_DIR = Path("outputs/cache/ml_baseline/default")
-
-
 @dataclass(frozen=True)
 class PipelineResult:
     """Результаты полного запуска симуляционного конвейера."""
@@ -80,7 +78,7 @@ class PipelineResult:
 def run_pipeline(
     cfg: ScenarioConfig,
     output_dir: Path | None = None,
-    ml_cache_dir: Path = ML_CACHE_DIR,
+    training_repository: TrainingRepository | None = None,
 ) -> PipelineResult:
     """Запускает симуляцию, экспорт, признаки, baseline-модели, гибридную логику и графики."""
     df, report = run_scenario(cfg)
@@ -91,15 +89,19 @@ def run_pipeline(
     feature_paths = export_features(cfg, features, output_dir, export_csv=False)
     rule_baseline = apply_rule_baseline(cfg, df)
     rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir, export_csv=False)
-    cached_ml_paths = _require_ml_baseline_cache(ml_cache_dir)
+    repository = training_repository or TrainingRepository.from_env()
+    repository.initialize()
+    stored_training = repository.load_latest()
     ml_predictions, ml_paths = predict_and_export_ml_baseline(
         dataset,
         output_dir,
-        cached_ml_paths["rul_model"],
+        None,
         features,
-        cached_metrics_path=cached_ml_paths["ml_metrics_json"],
-        cached_report_path=cached_ml_paths["ml_report"],
         export_csv=False,
+        model=stored_training.model,
+        metrics=stored_training.metrics,
+        report=stored_training.report,
+        model_reference=f"postgresql:ml_training_runs/{stored_training.training_id}",
     )
     hybrid_decisions = build_hybrid_decisions(cfg, dataset, features, ml_predictions)
     hybrid_paths = export_hybrid_decisions(
@@ -132,10 +134,11 @@ def main() -> None:
     args = parser.parse_args()
     cfg = load_config(Path("configs/base.yaml"))
     if args.train_ml:
-        paths = train_ml_baseline_cache(cfg)
-        print("ML cache trained:")
-        for path in paths.values():
-            print(f"- {path}")
+        training = train_ml_baseline_database(cfg)
+        print("ML baseline trained and stored in PostgreSQL:")
+        print(f"- training_id: {training.training_id}")
+        print(f"- model_id: {training.model_id}")
+        print(f"- artifact_sha256: {training.artifact_sha256}")
         return
     result = run_pipeline(cfg)
 
@@ -202,39 +205,20 @@ def _build_ml_training_corpus(
     )
 
 
-def _require_ml_baseline_cache(cache_dir: Path) -> dict[str, Path]:
-    """Возвращает готовую модель или требует отдельного запуска обучения."""
-    paths = _ml_baseline_cache_paths(cache_dir)
-    if all(path.exists() and path.stat().st_size > 0 for path in paths.values()):
-        return paths
-    raise RuntimeError(
-        "ML cache is missing or incomplete. Run `python main.py --train-ml` once."
-    )
-
-
-def train_ml_baseline_cache(
+def train_ml_baseline_database(
     base_cfg: ScenarioConfig,
-    cache_dir: Path = ML_CACHE_DIR,
-) -> dict[str, Path]:
-    """Явно обучает общий ML baseline отдельно от simulation/inference pipeline."""
+    training_repository: TrainingRepository | None = None,
+) -> StoredMLTraining:
+    """Обучает общий ML baseline и регистрирует новую версию в PostgreSQL."""
     ml_dataset, ml_features, test_run_ids = _build_cached_ml_training_corpus(base_cfg)
-    return train_and_export_ml_baseline(
+    trained = train_ml_baseline(
         ml_dataset,
-        cache_dir,
         ml_features,
         test_run_ids=test_run_ids,
-        use_subdir=False,
-        export_predictions=False,
     )
-
-
-def _ml_baseline_cache_paths(cache_dir: Path) -> dict[str, Path]:
-    """Описывает ожидаемые файлы дискового кэша ML baseline."""
-    return {
-        "ml_metrics_json": cache_dir / "ml_metrics.json",
-        "ml_report": cache_dir / "ml_baseline_report.md",
-        "rul_model": cache_dir / "random_forest_rul.joblib",
-    }
+    repository = training_repository or TrainingRepository.from_env()
+    repository.initialize()
+    return repository.save(trained)
 
 
 def _build_cached_ml_training_corpus(

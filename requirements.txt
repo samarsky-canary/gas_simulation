@@ -1,6 +1,7 @@
 numpy
 pandas
 pydantic
+psycopg[binary]
 pyarrow
 PyYAML
 pytest

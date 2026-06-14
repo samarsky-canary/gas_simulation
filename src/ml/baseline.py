@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -40,6 +42,38 @@ ML_OUTPUT_COLUMNS = [
 ]
 
 
+@dataclass(frozen=True)
+class TrainedMLBaseline:
+    """Обученная модель и данные, необходимые для ее регистрации."""
+
+    model: RandomForestRegressor
+    metrics: dict[str, object]
+    report: str
+
+
+def train_ml_baseline(
+    dataset: pd.DataFrame,
+    features: pd.DataFrame | None = None,
+    test_run_ids: set[str] | None = None,
+) -> TrainedMLBaseline:
+    """Обучает baseline в памяти без привязки к способу хранения артефакта."""
+    prepared = _prepare_dataset(_attach_features(dataset, features))
+    train_mask, split_info = _split_mask(
+        prepared, train_share=0.70, test_run_ids=test_run_ids
+    )
+    regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
+    metrics = {
+        "input_columns": ML_INPUT_COLUMNS,
+        "split": split_info,
+        "rul_regressor": reg_metrics,
+    }
+    return TrainedMLBaseline(
+        model=regressor,
+        metrics=metrics,
+        report=_report_markdown(metrics),
+    )
+
+
 def train_and_export_ml_baseline(
     dataset: pd.DataFrame,
     output_dir: Path,
@@ -53,10 +87,9 @@ def train_and_export_ml_baseline(
     ml_dir.mkdir(parents=True, exist_ok=True)
 
     prepared = _prepare_dataset(_attach_features(dataset, features))
-    train_mask, split_info = _split_mask(prepared, train_share=0.70, test_run_ids=test_run_ids)
-
-    regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
-    predictions = _build_predictions(prepared, train_mask, regressor)
+    train_mask, _ = _split_mask(prepared, train_share=0.70, test_run_ids=test_run_ids)
+    trained = train_ml_baseline(dataset, features, test_run_ids)
+    predictions = _build_predictions(prepared, train_mask, trained.model)
 
     paths = {
         "ml_metrics_json": ml_dir / "ml_metrics.json",
@@ -68,59 +101,75 @@ def train_and_export_ml_baseline(
         paths["ml_predictions_parquet"] = ml_dir / "ml_predictions.parquet"
         predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
         predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
-    joblib.dump(regressor, paths["rul_model"])
-
-    metrics = {
-        "input_columns": ML_INPUT_COLUMNS,
-        "split": split_info,
-        "rul_regressor": reg_metrics,
-    }
+    joblib.dump(trained.model, paths["rul_model"])
     paths["ml_metrics_json"].write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(trained.metrics, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    paths["ml_report"].write_text(_report_markdown(metrics), encoding="utf-8")
+    paths["ml_report"].write_text(trained.report, encoding="utf-8")
     return paths
 
 
 def predict_and_export_ml_baseline(
     dataset: pd.DataFrame,
     output_dir: Path,
-    model_path: Path,
+    model_path: Path | None,
     features: pd.DataFrame | None = None,
     cached_metrics_path: Path | None = None,
     cached_report_path: Path | None = None,
     export_csv: bool = True,
+    *,
+    model: Any | None = None,
+    metrics: dict[str, object] | None = None,
+    report: str | None = None,
+    model_reference: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Path]]:
     """Строит RUL-прогноз текущего запуска готовой ML-моделью и сохраняет артефакты."""
     ml_dir = output_dir / "ml_baseline"
     ml_dir.mkdir(parents=True, exist_ok=True)
 
-    predictions = predict_ml_baseline(dataset, model_path, features)
+    if model is None:
+        if model_path is None:
+            raise ValueError("Either model or model_path must be provided.")
+        model = joblib.load(model_path)
+    predictions = predict_ml_baseline(dataset, model_path, features, model=model)
 
     paths = {
         "ml_predictions_parquet": ml_dir / "ml_predictions.parquet",
         "ml_metrics_json": ml_dir / "ml_metrics.json",
         "ml_report": ml_dir / "ml_baseline_report.md",
-        "rul_model": model_path,
     }
+    if model_path is not None:
+        paths["rul_model"] = model_path
     if export_csv:
         paths["ml_predictions_csv"] = ml_dir / "ml_predictions.csv"
         predictions.to_csv(paths["ml_predictions_csv"], index=False, encoding="utf-8")
     predictions.to_parquet(paths["ml_predictions_parquet"], index=False)
 
-    if cached_metrics_path and cached_metrics_path.exists():
+    if metrics is not None:
+        inference_metrics = {
+            **metrics,
+            "source_model": model_reference or "in_memory",
+            "prediction_rows": int(len(predictions)),
+        }
+        paths["ml_metrics_json"].write_text(
+            json.dumps(inference_metrics, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    elif cached_metrics_path and cached_metrics_path.exists():
         paths["ml_metrics_json"].write_bytes(cached_metrics_path.read_bytes())
     else:
         metrics = {
             "input_columns": ML_INPUT_COLUMNS,
-            "source_model": str(model_path),
+            "source_model": model_reference or str(model_path),
             "prediction_rows": int(len(predictions)),
         }
         paths["ml_metrics_json"].write_text(
             json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
-    if cached_report_path and cached_report_path.exists():
+    if report is not None:
+        paths["ml_report"].write_text(report, encoding="utf-8")
+    elif cached_report_path and cached_report_path.exists():
         paths["ml_report"].write_bytes(cached_report_path.read_bytes())
     else:
         paths["ml_report"].write_text(
@@ -133,12 +182,18 @@ def predict_and_export_ml_baseline(
 
 def predict_ml_baseline(
     dataset: pd.DataFrame,
-    model_path: Path,
+    model_path: Path | None,
     features: pd.DataFrame | None = None,
+    *,
+    model: Any | None = None,
 ) -> pd.DataFrame:
     """Строит inference-прогноз в памяти без переобучения и файлового round-trip."""
     prepared = _prepare_dataset(_attach_features(dataset, features))
-    regressor = joblib.load(model_path)
+    if model is None:
+        if model_path is None:
+            raise ValueError("Either model or model_path must be provided.")
+        model = joblib.load(model_path)
+    regressor = model
     return _build_inference_predictions(prepared, regressor)
 
 
