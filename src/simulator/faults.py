@@ -70,6 +70,7 @@ def inject_faults(
     """Добавляет пропуски, выбросы и залипания датчиков в наблюдаемую телеметрию."""
     df = observed.copy()
     n = len(df)
+    spike_event = np.zeros(n, dtype=bool)
 
     for channel in OBSERVED_CHANNELS:
         # Пропуск имитирует потерю телеметрии по конкретному каналу.
@@ -80,6 +81,7 @@ def inject_faults(
         # Выброс имитирует короткий нехарактерный скачок измерения.
         spikes = rng.random(n) < cfg.p_spike
         if spikes.any():
+            spike_event |= spikes
             scale = _spike_scale(channel, cfg)
             values = rng.choice([-1.0, 1.0], size=spikes.sum()) * rng.uniform(
                 0.8 * scale, 1.5 * scale, spikes.sum()
@@ -101,6 +103,7 @@ def inject_faults(
     df["p_out_mpa"] = np.minimum(df["p_out_mpa"].clip(lower=0), df["p_in_mpa"])
 
     df["delta_p_kpa"] = np.maximum(0.0, 1000.0 * (df["p_in_mpa"] - df["p_out_mpa"]))
+    df["spike_event"] = spike_event
 
     return df
 

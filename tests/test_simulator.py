@@ -16,7 +16,14 @@ def test_run_scenario_generates_expected_columns() -> None:
     assert report.pressure_order_ok
     assert report.nonnegative_dp_ok
     assert report.nonnegative_q_ok
-    assert {"p_in_mpa", "p_out_mpa", "delta_p_kpa", "clog_level", "rul_analytic_h"}.issubset(df.columns)
+    assert {
+        "p_in_mpa",
+        "p_out_mpa",
+        "delta_p_kpa",
+        "clog_level",
+        "rul_analytic_h",
+        "spike_event",
+    }.issubset(df.columns)
 
 
 def test_degradation_is_monotonic_without_maintenance() -> None:

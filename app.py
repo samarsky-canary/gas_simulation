@@ -13,12 +13,14 @@ BASE_CONFIG_PATH = Path("configs/base.yaml")
 OUTPUT_ROOT = Path("outputs/ui_runs")
 
 GRAPH_CHOICES = {
-    "01 - расход": "q",
-    "02 - давление до и после фильтра": "pressure",
-    "03 - перепад deltaP": "delta_p",
-    "06 - состояние фильтра": "state",
-    "09 - сравнение RUL": "rul_comparison",
-    "11 - периоды предпочтения RUL": "rul_source_periods",
+    "Расход": "q",
+    "Давление до и после фильтра": "pressure",
+    "Перепад deltaP": "delta_p",
+    "Состояние фильтра": "state",
+    "Сравнение RUL": "rul_comparison",
+    "Периоды предпочтения RUL": "rul_source_periods",
+    "Доверие к данным": "data_confidence",
+    "Доля выбросов": "spike_rate",
 }
 
 SCENARIO_LABELS = {
@@ -58,6 +60,9 @@ def main() -> None:
         scenario_p_missing = float(
             SCENARIO_OVERRIDES[scenario_name].get("p_missing", base_cfg.p_missing)
         )
+        scenario_p_spike = float(
+            SCENARIO_OVERRIDES[scenario_name].get("p_spike", base_cfg.p_spike)
+        )
 
         with st.form("simulation_form"):
             duration_days = st.number_input(
@@ -94,6 +99,19 @@ def main() -> None:
                     "на каждом временном шаге."
                 ),
             )
+            p_spike_percent = st.number_input(
+                "Вероятность выброса по каждому датчику, %",
+                min_value=0.0,
+                max_value=100.0,
+                value=scenario_p_spike * 100.0,
+                step=0.1,
+                format="%.2f",
+                key=f"p_spike_percent_{scenario_name}",
+                help=(
+                    "Вероятность кратковременного импульсного отклонения отдельно "
+                    "для P_in, P_out, Q и T на каждом временном шаге."
+                ),
+            )
             submitted = st.form_submit_button("Запустить симуляцию", type="primary")
 
     if submitted:
@@ -103,6 +121,7 @@ def main() -> None:
             "step_minutes": int(step_minutes),
             "k_s_per_hour": float(k_s_per_hour),
             "p_missing": float(p_missing_percent) / 100.0,
+            "p_spike": float(p_spike_percent) / 100.0,
         }
         cfg = load_config_with_overrides(BASE_CONFIG_PATH, overrides)
         run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

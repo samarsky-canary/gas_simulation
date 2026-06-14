@@ -55,8 +55,8 @@ class ScenarioConfig(BaseModel):
     dp0_kpa: float = Field(default=1.2, gt=0)                                       # Базовый перепад давления на чистом фильтре при номинальных условиях, кПа.
     dp_warn_kpa: float = Field(default=5.0, gt=0)                                   # Порог предупреждения по нормированному перепаду давления, кПа.
     dp_crit_kpa: float = Field(default=10.0, gt=0)                                  # Критический порог по нормированному перепаду давления, кПа.
-    planned_maintenance_rul_h: float = Field(default=72.0, gt=0)                    # Горизонт планового обслуживания по остаточному ресурсу, часы.
-    urgent_maintenance_rul_h: float = Field(default=12.0, gt=0)                     # Горизонт срочного обслуживания по остаточному ресурсу, часы.
+    planned_maintenance_rul_h: float = Field(default=1440.0, gt=0)                  # Горизонт планового обслуживания: 60 суток, часы.
+    urgent_maintenance_rul_h: float = Field(default=336.0, gt=0)                    # Горизонт срочного обслуживания: 14 суток, часы.
     c0: float = Field(default=0.05, ge=0, le=1)                                     # Начальный скрытый уровень засорения фильтра от 0 до 1.
     k_s_per_hour: float = Field(default=4e-4, ge=0)                                 # Базовая скорость роста засорения за час при номинальной нагрузке.
     alpha_flow: float = Field(default=2.0, gt=0)                                    # Степень влияния расхода на перепад давления.

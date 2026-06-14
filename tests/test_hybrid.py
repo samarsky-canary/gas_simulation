@@ -24,8 +24,8 @@ def _dataset() -> pd.DataFrame:
             "clog_level": [0.1, 0.5, 0.9, 0.2],
             "deltaP_norm_kPa": [2.0, 6.0, 11.0, 4.0],
             "state": ["normal", "warning", "critical", "unknown"],
-            "RUL_oracle_h": [200.0, 50.0, 5.0, 120.0],
-            "RUL_analytic_h": [210.0, 55.0, 8.0, 130.0],
+            "RUL_oracle_h": [2000.0, 1000.0, 100.0, 1800.0],
+            "RUL_analytic_h": [2100.0, 1100.0, 120.0, 1900.0],
             "quality_code": ["good", "good", "good", "missing"],
         }
     )
@@ -45,7 +45,7 @@ def _ml_predictions() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "timestamp": pd.date_range("2026-01-01", periods=4, freq="1h"),
-            "RUL_pred_h": [205.0, 50.0, 7.0, 100.0],
+            "RUL_pred_h": [2050.0, 1000.0, 110.0, 1700.0],
         }
     )
 

@@ -22,6 +22,7 @@ OBSERVED_COLUMNS = [
     "q_m3h",
     "t_c",
     "quality_code",
+    "spike_event",
     "state_obs",
     "alarm_flag",
     "delta_p_norm_q2",

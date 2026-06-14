@@ -18,6 +18,7 @@ STATE_TO_CODE = {"unknown": -1, "normal": 0, "warning": 1, "critical": 2}
 STATE_TICKS = [-1, 0, 1, 2]
 STATE_LABELS = ["неизвестно", "норма", "предупреждение", "критическое"]
 STATE_SMOOTH_HOURS = 3
+RUL_SOURCE_PLOT_FREQUENCY = "1h"
 RUL_SOURCE_COLORS = {
     "ml_baseline": "#1f77b4",
     "conservative_min": "#ff7f0e",
@@ -55,6 +56,8 @@ def build_plots(
         "state": plot_dir / "06_sostoyanie_filtra.png",
         "rul_comparison": plot_dir / "09_sravnenie_rul.png",
         "rul_source_periods": plot_dir / "11_periodi_predpochteniya_rul.png",
+        "data_confidence": plot_dir / "12_doverie_k_dannym.png",
+        "spike_rate": plot_dir / "13_dolya_vybrosov.png",
         "description": plot_dir / "plots_description.md",
         "diagnostics": plot_dir / "plot_diagnostics.md",
     }
@@ -65,6 +68,8 @@ def build_plots(
     _plot_state(cfg, data, paths["state"], decision_cards)
     _plot_rul_comparison(cfg, data, hybrid_decisions, paths["rul_comparison"])
     _plot_rul_source_periods(cfg, hybrid_decisions, paths["rul_source_periods"])
+    _plot_data_confidence(hybrid_decisions, paths["data_confidence"])
+    _plot_spike_rate(data, paths["spike_rate"])
 
     # These plots are intentionally disabled because they are not displayed in the UI.
     # Keep the calls here so they can be restored without reconstructing the orchestration.
@@ -80,6 +85,169 @@ def build_plots(
     paths["description"].write_text(_description(), encoding="utf-8")
     paths["diagnostics"].write_text(_diagnostics(cfg, data), encoding="utf-8")
     return paths
+
+
+def _plot_spike_rate(df: pd.DataFrame, path: Path) -> None:
+    """Показывает часовую долю строк с искусственно инъецированными выбросами."""
+    if "spike_event" not in df.columns:
+        path.write_text("Нет флага spike_event для построения графика.", encoding="utf-8")
+        return
+
+    data = df[["timestamp", "spike_event"]].copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
+    hourly_percent = (
+        data.set_index("timestamp")["spike_event"].astype(float).resample("1h").mean() * 100.0
+    )
+    total_percent = float(data["spike_event"].mean() * 100.0)
+
+    fig, ax = plt.subplots(figsize=(16, 6))
+    ax.plot(
+        hourly_percent.index,
+        hourly_percent,
+        color="#d62728",
+        linewidth=1.1,
+        label="доля строк с выбросами за час",
+    )
+    ax.fill_between(
+        hourly_percent.index,
+        0,
+        hourly_percent,
+        color="#fecaca",
+        alpha=0.45,
+    )
+    ax.set_ylim(bottom=0)
+    ax.set_title("Доля телеметрических строк с выбросами")
+    ax.set_ylabel("Выбросы, %")
+    ax.set_xlabel("Время")
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper left")
+    ax.text(
+        0.99,
+        0.90,
+        f"Среднее: {total_percent:.2f}%",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        bbox={"facecolor": "white", "edgecolor": "#d62728", "alpha": 0.9},
+    )
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    fig.autofmt_xdate()
+    _save(fig, path)
+
+
+def _plot_data_confidence(
+    hybrid_decisions: pd.DataFrame | None,
+    path: Path,
+) -> None:
+    """Показывает доверие к данным и долю пропусков для демонстрации качества телеметрии."""
+    if hybrid_decisions is None or hybrid_decisions.empty:
+        path.write_text("Нет hybrid_decisions для построения графика.", encoding="utf-8")
+        return
+
+    required = {
+        "timestamp",
+        "confidence_data",
+        "missing_rate_1h",
+        "confidence_consistency",
+    }
+    if not required.issubset(hybrid_decisions.columns):
+        path.write_text("Нет полей качества данных для построения графика.", encoding="utf-8")
+        return
+
+    data = hybrid_decisions[list(required)].copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
+    data = data.set_index("timestamp").sort_index()
+    hourly = data.resample("1h").agg(
+        confidence_mean=("confidence_data", "mean"),
+        missing_rate_mean=("missing_rate_1h", "mean"),
+        consistency_mean=("confidence_consistency", "mean"),
+    )
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(16, 12),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.0, 1.2, 1.2]},
+    )
+
+    axes[0].plot(
+        hourly.index,
+        hourly["confidence_mean"],
+        color="#1f77b4",
+        linewidth=1.2,
+        label="среднее C_data за час",
+    )
+    axes[0].axhline(
+        0.45,
+        color="#ff7f0e",
+        linestyle="--",
+        linewidth=1.0,
+        label="граница низкого доверия",
+    )
+    axes[0].set_ylim(-0.02, 1.02)
+    axes[0].set_ylabel("C_data, 0...1")
+    axes[0].set_title("Доверие к данным телеметрии C_data(t)")
+    axes[0].legend(loc="lower left", ncol=2)
+    confidence_percent = float(hourly["confidence_mean"].mean() * 100.0)
+    axes[0].text(
+        0.99,
+        0.90,
+        f"Среднее: {confidence_percent:.2f}%",
+        transform=axes[0].transAxes,
+        ha="right",
+        va="top",
+        bbox={"facecolor": "white", "edgecolor": "#1f77b4", "alpha": 0.9},
+    )
+
+    axes[1].plot(
+        hourly.index,
+        hourly["missing_rate_mean"] * 100.0,
+        color="#9467bd",
+        linewidth=1.0,
+        label="средняя доля пропусков за час",
+    )
+    missing_percent = float(hourly["missing_rate_mean"].mean() * 100.0)
+    axes[1].set_ylabel("Пропуски, %")
+    axes[1].set_ylim(bottom=0)
+    axes[1].legend(loc="upper left")
+    axes[1].text(
+        0.99,
+        0.90,
+        f"Среднее: {missing_percent:.2f}%",
+        transform=axes[1].transAxes,
+        ha="right",
+        va="top",
+        bbox={"facecolor": "white", "edgecolor": "#9467bd", "alpha": 0.9},
+    )
+
+    axes[2].plot(
+        hourly.index,
+        hourly["consistency_mean"] * 100.0,
+        color="#2ca02c",
+        linewidth=1.1,
+        label="согласованность ML и аналитического RUL",
+    )
+    consistency_percent = float(hourly["consistency_mean"].mean() * 100.0)
+    axes[2].set_ylim(-2, 102)
+    axes[2].set_ylabel("Согласованность, %")
+    axes[2].set_xlabel("Время")
+    axes[2].legend(loc="lower left")
+    axes[2].text(
+        0.99,
+        0.90,
+        f"Среднее: {consistency_percent:.2f}%",
+        transform=axes[2].transAxes,
+        ha="right",
+        va="top",
+        bbox={"facecolor": "white", "edgecolor": "#2ca02c", "alpha": 0.9},
+    )
+
+    for ax in axes:
+        ax.grid(True, alpha=0.25)
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
+    fig.autofmt_xdate()
+    _save(fig, path)
 
 
 def _plot_q(df: pd.DataFrame, path: Path) -> None:
@@ -143,18 +311,24 @@ def _plot_rul_comparison(
     hybrid_decisions: pd.DataFrame | None,
     path: Path,
 ) -> None:
-    """Сравнивает oracle, аналитический, ML и итоговый гибридный RUL."""
+    """Сравнивает часовые средние oracle, аналитического, ML и гибридного RUL."""
+    rul_data = (
+        df.set_index("timestamp")[["rul_oracle_h", "rul_analytic_h"]]
+        .resample(RUL_SOURCE_PLOT_FREQUENCY)
+        .mean()
+        .reset_index()
+    )
     fig, axes = plt.subplots(4, 1, figsize=(16, 12), sharex=True)
     axes[0].plot(
-        df["timestamp"],
-        df["rul_oracle_h"],
+        rul_data["timestamp"],
+        rul_data["rul_oracle_h"],
         label="1. RUL oracle",
         color="#4b5563",
         linewidth=1.0,
     )
     axes[1].plot(
-        df["timestamp"],
-        df["rul_analytic_h"],
+        rul_data["timestamp"],
+        rul_data["rul_analytic_h"],
         label="2. RUL аналитический",
         color="#8c564b",
         linewidth=1.0,
@@ -163,6 +337,12 @@ def _plot_rul_comparison(
     if hybrid_decisions is not None and not hybrid_decisions.empty:
         decisions = hybrid_decisions.sort_values("timestamp").copy()
         decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
+        decisions = (
+            decisions.set_index("timestamp")[["RUL_ml_h", "RUL_fused_h"]]
+            .resample(RUL_SOURCE_PLOT_FREQUENCY)
+            .mean()
+            .reset_index()
+        )
         axes[2].plot(
             decisions["timestamp"],
             decisions["RUL_ml_h"],
@@ -202,7 +382,7 @@ def _plot_rul_comparison(
         ax.grid(True, alpha=0.25)
         ax.legend(loc="best")
 
-    axes[0].set_title("Сравнение оценок остаточного ресурса RUL(t)")
+    axes[0].set_title("Сравнение оценок остаточного ресурса RUL(t), среднее за 1 час")
     axes[-1].set_xlabel("Время")
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     fig.autofmt_xdate()
@@ -317,6 +497,7 @@ def _plot_rul_source_periods(
 
     decisions = hybrid_decisions.sort_values("timestamp").copy()
     decisions["timestamp"] = pd.to_datetime(decisions["timestamp"])
+    plot_decisions = _aggregate_rul_source_plot_data(decisions)
 
     fig, axes = plt.subplots(
         4,
@@ -327,24 +508,24 @@ def _plot_rul_source_periods(
     )
 
     axes[0].plot(
-        decisions["timestamp"],
-        decisions["RUL_ml_h"],
+        plot_decisions["timestamp"],
+        plot_decisions["RUL_ml_h"],
         label="RUL ML",
         color="#1f77b4",
         linewidth=0.8,
         alpha=0.75,
     )
     axes[0].plot(
-        decisions["timestamp"],
-        decisions["RUL_analytic_h"],
+        plot_decisions["timestamp"],
+        plot_decisions["RUL_analytic_h"],
         label="RUL аналитический",
         color="#8c564b",
         linewidth=0.8,
         alpha=0.75,
     )
     axes[0].plot(
-        decisions["timestamp"],
-        decisions["RUL_fused_h"],
+        plot_decisions["timestamp"],
+        plot_decisions["RUL_fused_h"],
         label="RUL итоговый",
         color="#d62728",
         linewidth=1.5,
@@ -352,22 +533,22 @@ def _plot_rul_source_periods(
     axes[0].axhline(cfg.planned_maintenance_rul_h, color="#ffbf00", linestyle="--", linewidth=1.0, label="плановое ТО")
     axes[0].axhline(cfg.urgent_maintenance_rul_h, color="#7f0000", linestyle="--", linewidth=1.0, label="срочное ТО")
     axes[0].set_ylabel("RUL, ч")
-    axes[0].set_title("Периоды предпочтения источника RUL")
+    axes[0].set_title("Периоды предпочтения источника RUL, агрегация по 1 часу")
     axes[0].legend(loc="best")
 
-    _plot_source_bands(axes[1], decisions)
+    _plot_source_bands(axes[1], plot_decisions)
     axes[1].set_ylabel("Источник RUL")
 
     axes[2].plot(
-        decisions["timestamp"],
-        decisions["confidence_total"],
+        plot_decisions["timestamp"],
+        plot_decisions["confidence_total"],
         label="confidence_total",
         color="#111111",
         linewidth=1.1,
     )
     axes[2].plot(
-        decisions["timestamp"],
-        decisions["confidence_consistency"],
+        plot_decisions["timestamp"],
+        plot_decisions["confidence_consistency"],
         label="confidence_consistency",
         color="#ff7f0e",
         linewidth=0.9,
@@ -386,6 +567,37 @@ def _plot_rul_source_periods(
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     fig.autofmt_xdate()
     _save(fig, path)
+
+
+def _aggregate_rul_source_plot_data(decisions: pd.DataFrame) -> pd.DataFrame:
+    """Сжимает частый ряд до часовых точек только для быстрой визуализации."""
+    if decisions.empty:
+        return decisions.copy()
+
+    data = decisions.copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"])
+    data = data.set_index("timestamp").sort_index()
+    numeric_columns = [
+        "RUL_ml_h",
+        "RUL_analytic_h",
+        "RUL_fused_h",
+        "confidence_total",
+        "confidence_consistency",
+    ]
+    numeric = data[numeric_columns].resample(RUL_SOURCE_PLOT_FREQUENCY).mean()
+    source = data["rul_source"].resample(RUL_SOURCE_PLOT_FREQUENCY).agg(_dominant_value)
+    return numeric.assign(rul_source=source).dropna(how="all").reset_index()
+
+
+def _dominant_value(values: pd.Series) -> str | None:
+    """Возвращает наиболее частую категорию интервала с устойчивым выбором при равенстве."""
+    non_null = values.dropna().astype(str)
+    if non_null.empty:
+        return None
+    counts = non_null.value_counts(sort=False)
+    maximum = counts.max()
+    winners = set(counts[counts.eq(maximum)].index)
+    return next(value for value in non_null if value in winners)
 
 
 def _plot_source_bands(ax: plt.Axes, decisions: pd.DataFrame) -> None:
@@ -767,6 +979,8 @@ def _description() -> str:
             f"- `06_sostoyanie_filtra.png` - raw-состояние, устойчивое состояние по сглаженному `deltaP_norm` и вертикальные отметки карточек решений, окно {STATE_SMOOTH_HOURS} ч.",
             "- `09_sravnenie_rul.png` - сравнение oracle, аналитического, ML и гибридного RUL с порогами обслуживания.",
             "- `11_periodi_predpochteniya_rul.png` - полный временной ряд: в какие периоды итоговый RUL берется из ML, аналитики, conservative min или fallback; нижняя панель показывает недельные количества решений по источникам.",
+            "- `12_doverie_k_dannym.png` - доверие к данным `C_data`, средняя доля пропусков и согласованность ML с аналитическим RUL.",
+            "- `13_dolya_vybrosov.png` - часовая доля строк с инъецированными выбросами и среднее значение за прогон.",
             "",
             "Остальные функции построения графиков сохранены в коде, но их вызовы отключены в `build_plots`, поскольку UI их не отображает.",
             "",
