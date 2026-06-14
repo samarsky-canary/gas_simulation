@@ -55,6 +55,7 @@ def train_ml_baseline(
     dataset: pd.DataFrame,
     features: pd.DataFrame | None = None,
     test_run_ids: set[str] | None = None,
+    corpus_metadata: dict[str, object] | None = None,
 ) -> TrainedMLBaseline:
     """Обучает baseline в памяти без привязки к способу хранения артефакта."""
     prepared = _prepare_dataset(_attach_features(dataset, features))
@@ -67,6 +68,8 @@ def train_ml_baseline(
         "split": split_info,
         "rul_regressor": reg_metrics,
     }
+    if corpus_metadata is not None:
+        metrics["corpus"] = corpus_metadata
     return TrainedMLBaseline(
         model=regressor,
         metrics=metrics,

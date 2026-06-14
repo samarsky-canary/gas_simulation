@@ -18,12 +18,30 @@ ML-модель обучается отдельно и переиспользу�
 
 ```powershell
 $env:DATABASE_URL="postgresql://gas_simulation:gas_simulation@localhost:5432/gas_simulation"
-.\.venv\Scripts\python.exe main.py --train-ml
+.\.venv\Scripts\python.exe main.py --train-ml --train-datasets 100
 ```
 
 Сведения об обучении, метрики, Markdown-отчет и бинарный `joblib`-артефакт хранятся
 в PostgreSQL. Обычный запуск и Streamlit выполняют только inference по последнему
 успешному обучению. Если записи нет, система попросит выполнить команду обучения.
+
+Для корпуса из 100 наборов по умолчанию:
+
+- 80 полных прогонов используются для train, 20 для test.
+- Сценарии равномерно чередуются между всеми 8 типами.
+- Физические параметры, режимы, шумы и дефекты варьируются воспроизводимо.
+- Длительность каждого прогона составляет 60–120 суток, шаг — 30 минут.
+- Точные конфигурации всех прогонов сохраняются в `metrics.corpus` PostgreSQL.
+
+Дополнительные параметры:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --train-ml `
+  --train-datasets 100 `
+  --test-share 0.2 `
+  --training-seed 20260614 `
+  --training-step-minutes 30
+```
 
 ## Запуск в Docker
 
@@ -50,7 +68,7 @@ Compose поднимает PostgreSQL и приложение. Перед пер
 однократно зарегистрировать модель:
 
 ```powershell
-docker compose run --rm gas-simulation python main.py --train-ml
+docker compose run --rm gas-simulation python main.py --train-ml --train-datasets 100
 docker compose up
 ```
 

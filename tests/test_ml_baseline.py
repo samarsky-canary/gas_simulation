@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from main import _build_randomized_ml_training_corpus
 from src.features import build_features
 from src.ml import (
     ML_INPUT_COLUMNS,
@@ -94,3 +95,28 @@ def test_ml_baseline_predicts_from_in_memory_model(tmp_path) -> None:
     assert set(predictions["split"]) == {"inference"}
     assert "rul_model" not in paths
     assert paths["ml_predictions_parquet"].exists()
+
+
+def test_randomized_training_corpus_has_independent_runs() -> None:
+    cfg = ScenarioConfig(
+        duration_days=2,
+        step_minutes=60,
+        p_missing=0,
+        p_spike=0,
+        p_stuck=0,
+    )
+
+    dataset, features, test_run_ids, metadata = _build_randomized_ml_training_corpus(
+        cfg,
+        dataset_count=8,
+        corpus_seed=123,
+        test_share=0.25,
+        step_minutes=120,
+    )
+
+    assert dataset["run_id"].nunique() == 8
+    assert features["run_id"].nunique() == 8
+    assert len(test_run_ids) == 2
+    assert metadata["dataset_count"] == 8
+    assert len(metadata["runs"]) == 8
+    assert dataset["scenario"].nunique() == 8

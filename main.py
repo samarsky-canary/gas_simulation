@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.features import build_features, export_features
@@ -58,6 +59,13 @@ ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
 ML_STRESS_TEST_SEEDS = (42,)
 ML_CORPUS_MIN_DURATION_DAYS = 90
+ML_RANDOMIZED_SCENARIOS = tuple(SCENARIO_OVERRIDES)
+ML_DEFAULT_DATASET_COUNT = 100
+ML_DEFAULT_TEST_SHARE = 0.2
+ML_DEFAULT_CORPUS_SEED = 20260614
+ML_DEFAULT_STEP_MINUTES = 30
+
+
 @dataclass(frozen=True)
 class PipelineResult:
     """Результаты полного запуска симуляционного конвейера."""
@@ -129,12 +137,48 @@ def main() -> None:
     parser.add_argument(
         "--train-ml",
         action="store_true",
-        help="Train and replace the shared ML cache, then exit.",
+        help="Train a new ML model version, store it in PostgreSQL, then exit.",
+    )
+    parser.add_argument(
+        "--train-datasets",
+        type=int,
+        default=ML_DEFAULT_DATASET_COUNT,
+        help="Number of randomized simulation datasets used for ML training.",
+    )
+    parser.add_argument(
+        "--training-seed",
+        type=int,
+        default=ML_DEFAULT_CORPUS_SEED,
+        help="Seed controlling randomized training configurations.",
+    )
+    parser.add_argument(
+        "--test-share",
+        type=float,
+        default=ML_DEFAULT_TEST_SHARE,
+        help="Share of complete simulation runs reserved for test.",
+    )
+    parser.add_argument(
+        "--training-step-minutes",
+        type=int,
+        default=ML_DEFAULT_STEP_MINUTES,
+        help="Sampling step for generated training datasets.",
     )
     args = parser.parse_args()
     cfg = load_config(Path("configs/base.yaml"))
     if args.train_ml:
-        training = train_ml_baseline_database(cfg)
+        if args.train_datasets < 2:
+            parser.error("--train-datasets must be at least 2")
+        if not 0 < args.test_share < 1:
+            parser.error("--test-share must be between 0 and 1")
+        if not 1 <= args.training_step_minutes <= 120:
+            parser.error("--training-step-minutes must be between 1 and 120")
+        training = train_ml_baseline_database(
+            cfg,
+            dataset_count=args.train_datasets,
+            corpus_seed=args.training_seed,
+            test_share=args.test_share,
+            step_minutes=args.training_step_minutes,
+        )
         print("ML baseline trained and stored in PostgreSQL:")
         print(f"- training_id: {training.training_id}")
         print(f"- model_id: {training.model_id}")
@@ -208,17 +252,167 @@ def _build_ml_training_corpus(
 def train_ml_baseline_database(
     base_cfg: ScenarioConfig,
     training_repository: TrainingRepository | None = None,
+    *,
+    dataset_count: int = ML_DEFAULT_DATASET_COUNT,
+    corpus_seed: int = ML_DEFAULT_CORPUS_SEED,
+    test_share: float = ML_DEFAULT_TEST_SHARE,
+    step_minutes: int = ML_DEFAULT_STEP_MINUTES,
 ) -> StoredMLTraining:
     """Обучает общий ML baseline и регистрирует новую версию в PostgreSQL."""
-    ml_dataset, ml_features, test_run_ids = _build_cached_ml_training_corpus(base_cfg)
+    ml_dataset, ml_features, test_run_ids, corpus_metadata = (
+        _build_randomized_ml_training_corpus(
+            base_cfg,
+            dataset_count=dataset_count,
+            corpus_seed=corpus_seed,
+            test_share=test_share,
+            step_minutes=step_minutes,
+        )
+    )
     trained = train_ml_baseline(
         ml_dataset,
         ml_features,
         test_run_ids=test_run_ids,
+        corpus_metadata=corpus_metadata,
     )
     repository = training_repository or TrainingRepository.from_env()
     repository.initialize()
     return repository.save(trained)
+
+
+def _build_randomized_ml_training_corpus(
+    base_cfg: ScenarioConfig,
+    *,
+    dataset_count: int,
+    corpus_seed: int,
+    test_share: float,
+    step_minutes: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, set[str], dict[str, object]]:
+    """Генерирует воспроизводимый корпус с вариацией режимов, физики и дефектов."""
+    if dataset_count < 2:
+        raise ValueError("dataset_count must be at least 2")
+    if not 0 < test_share < 1:
+        raise ValueError("test_share must be between 0 and 1")
+    if not 1 <= step_minutes <= 120:
+        raise ValueError("step_minutes must be between 1 and 120")
+
+    rng = np.random.default_rng(corpus_seed)
+    configs = [
+        _randomized_ml_config(
+            base_cfg, rng, ordinal, step_minutes, corpus_seed=corpus_seed
+        )
+        for ordinal in range(1, dataset_count + 1)
+    ]
+    test_count = min(dataset_count - 1, max(1, round(dataset_count * test_share)))
+    test_ordinals = set(
+        int(value)
+        for value in rng.choice(
+            np.arange(1, dataset_count + 1), size=test_count, replace=False
+        )
+    )
+
+    datasets: list[pd.DataFrame] = []
+    features: list[pd.DataFrame] = []
+    test_run_ids: set[str] = set()
+    run_metadata: list[dict[str, object]] = []
+    for ordinal, run_cfg in enumerate(configs, start=1):
+        print(
+            f"[{ordinal}/{dataset_count}] generating "
+            f"{run_cfg.scenario_name}, seed={run_cfg.seed}"
+        )
+        run_df, _ = run_scenario(run_cfg)
+        run_id = str(run_df["run_id"].iloc[0])
+        datasets.append(build_canonical_dataset(run_cfg, run_df))
+        features.append(build_features(run_cfg, run_df))
+        split = "test" if ordinal in test_ordinals else "train"
+        if split == "test":
+            test_run_ids.add(run_id)
+        run_metadata.append(
+            {
+                "run_id": run_id,
+                "split": split,
+                "config": run_cfg.model_dump(mode="json"),
+            }
+        )
+
+    metadata = {
+        "dataset_count": dataset_count,
+        "corpus_seed": corpus_seed,
+        "test_share": test_share,
+        "step_minutes": step_minutes,
+        "runs": run_metadata,
+    }
+    return (
+        pd.concat(datasets, ignore_index=True),
+        pd.concat(features, ignore_index=True),
+        test_run_ids,
+        metadata,
+    )
+
+
+def _randomized_ml_config(
+    base_cfg: ScenarioConfig,
+    rng: np.random.Generator,
+    ordinal: int,
+    step_minutes: int,
+    *,
+    corpus_seed: int,
+) -> ScenarioConfig:
+    """Создаёт валидную конфигурацию одного разнообразного обучающего прогона."""
+    scenario_name = ML_RANDOMIZED_SCENARIOS[(ordinal - 1) % len(ML_RANDOMIZED_SCENARIOS)]
+    raw = base_cfg.model_dump()
+    raw.update(SCENARIO_OVERRIDES[scenario_name])
+
+    q_nominal = float(rng.uniform(450.0, 850.0))
+    p_nominal = float(rng.uniform(0.45, 0.8))
+    dp_warn = float(rng.uniform(4.0, 6.5))
+    scenario_k_s = float(raw["k_s_per_hour"])
+    raw.update(
+        {
+            "filter_id": f"F-ML-{ordinal:04d}",
+            "scenario_name": scenario_name,
+            "duration_days": int(rng.integers(60, 121)),
+            "step_minutes": step_minutes,
+            "seed": corpus_seed_for_run(corpus_seed, ordinal),
+            "q_nominal_m3h": q_nominal,
+            "q_min_m3h": q_nominal * float(rng.uniform(0.18, 0.35)),
+            "q_max_m3h": q_nominal * float(rng.uniform(1.7, 2.2)),
+            "a_q": float(rng.uniform(0.06, 0.25)),
+            "q_weekly_amp": float(rng.uniform(0.0, 0.12)),
+            "q_process_std_m3h": float(rng.uniform(15.0, 90.0)),
+            "p_in_nominal_mpa": p_nominal,
+            "p_min_mpa": max(0.05, p_nominal * 0.2),
+            "p_max_mpa": p_nominal * 1.8,
+            "a_p_mpa": float(rng.uniform(0.005, 0.03)),
+            "t_nominal_c": float(rng.uniform(5.0, 25.0)),
+            "a_t_c": float(rng.uniform(2.0, 10.0)),
+            "dp0_kpa": float(rng.uniform(0.8, 1.8)),
+            "dp_warn_kpa": dp_warn,
+            "dp_crit_kpa": dp_warn + float(rng.uniform(3.5, 7.0)),
+            "c0": float(rng.uniform(0.01, 0.2)),
+            "k_s_per_hour": scenario_k_s * float(rng.uniform(0.65, 1.45)),
+            "alpha_flow": float(rng.uniform(1.7, 2.3)),
+            "gamma_load": float(rng.uniform(0.8, 1.3)),
+            "k_c": float(rng.uniform(6.0, 11.0)),
+            "beta": float(rng.uniform(0.85, 1.3)),
+            "sigma_p_mpa": float(rng.uniform(0.0001, 0.0008)),
+            "sigma_q_rel": float(rng.uniform(0.003, 0.03)),
+            "sigma_t_abs_c": float(rng.uniform(0.1, 0.8)),
+            "p_missing": min(0.08, float(raw["p_missing"]) * float(rng.uniform(0.5, 2.0))),
+            "p_spike": min(0.02, float(raw["p_spike"]) * float(rng.uniform(0.5, 2.0))),
+            "p_stuck": min(0.01, float(raw["p_stuck"]) * float(rng.uniform(0.5, 2.0))),
+            "bias_drift_mpa_per_day": float(raw["bias_drift_mpa_per_day"])
+            * float(rng.uniform(0.7, 1.5)),
+        }
+    )
+    if scenario_name == "maintenance_reset":
+        raw["maintenance_day"] = float(rng.uniform(20.0, raw["duration_days"] - 10.0))
+        raw["c_reset"] = float(rng.uniform(0.01, 0.08))
+    return ScenarioConfig.model_validate(raw)
+
+
+def corpus_seed_for_run(corpus_seed: int, ordinal: int) -> int:
+    """Возвращает уникальный воспроизводимый seed для run_id корпуса."""
+    return (abs(corpus_seed) + ordinal) % 2_000_000_000 + 1
 
 
 def _build_cached_ml_training_corpus(
