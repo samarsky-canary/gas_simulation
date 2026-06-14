@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from main import _build_randomized_ml_training_corpus
@@ -97,7 +98,7 @@ def test_ml_baseline_predicts_from_in_memory_model(tmp_path) -> None:
     assert paths["ml_predictions_parquet"].exists()
 
 
-def test_ml_baseline_corrects_analytic_rul_instead_of_replacing_it(tmp_path) -> None:
+def test_ml_baseline_predicts_rul_independently_from_analytic_estimate(tmp_path) -> None:
     cfg = ScenarioConfig(
         duration_days=90,
         step_minutes=60,
@@ -121,10 +122,24 @@ def test_ml_baseline_corrects_analytic_rul_instead_of_replacing_it(tmp_path) -> 
         report=trained.report,
     )
 
-    first_analytic = float(dataset["RUL_analytic_h"].iloc[0])
-    first_prediction = float(predictions["RUL_pred_h"].iloc[0])
-    assert trained.metrics["strategy"] == "analytic_residual_correction"
-    assert abs(first_prediction - first_analytic) < 0.25 * first_analytic
+    changed_dataset = dataset.copy()
+    changed_dataset["RUL_analytic_h"] = changed_dataset["RUL_analytic_h"] + 100_000.0
+    changed_predictions, _ = predict_and_export_ml_baseline(
+        changed_dataset,
+        tmp_path / "changed",
+        None,
+        features,
+        model=trained.model,
+        metrics=trained.metrics,
+        report=trained.report,
+    )
+
+    assert trained.metrics["strategy"] == "independent_direct_rul"
+    np.testing.assert_allclose(
+        predictions["RUL_pred_h"].to_numpy(),
+        changed_predictions["RUL_pred_h"].to_numpy(),
+        equal_nan=True,
+    )
 
 
 def test_randomized_training_corpus_has_independent_runs() -> None:
@@ -149,4 +164,5 @@ def test_randomized_training_corpus_has_independent_runs() -> None:
     assert len(test_run_ids) == 2
     assert metadata["dataset_count"] == 8
     assert len(metadata["runs"]) == 8
-    assert dataset["scenario"].nunique() == 8
+    assert dataset["scenario"].nunique() == 7
+    assert "normal" not in set(dataset["scenario"])

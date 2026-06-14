@@ -59,7 +59,9 @@ ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
 ML_STRESS_TEST_SEEDS = (42,)
 ML_CORPUS_MIN_DURATION_DAYS = 90
-ML_RANDOMIZED_SCENARIOS = tuple(SCENARIO_OVERRIDES)
+ML_RANDOMIZED_SCENARIOS = tuple(
+    scenario for scenario in SCENARIO_OVERRIDES if scenario != "normal"
+)
 ML_DEFAULT_DATASET_COUNT = 100
 ML_DEFAULT_TEST_SHARE = 0.2
 ML_DEFAULT_CORPUS_SEED = 20260614
@@ -368,7 +370,6 @@ def _randomized_ml_config(
         {
             "filter_id": f"F-ML-{ordinal:04d}",
             "scenario_name": scenario_name,
-            "duration_days": int(rng.integers(60, 121)),
             "step_minutes": step_minutes,
             "seed": corpus_seed_for_run(corpus_seed, ordinal),
             "a_q": float(rng.uniform(0.06, 0.25)),
@@ -393,9 +394,35 @@ def _randomized_ml_config(
         }
     )
     if scenario_name == "maintenance_reset":
-        raw["maintenance_day"] = float(rng.uniform(20.0, raw["duration_days"] - 10.0))
+        raw["maintenance_day"] = float(rng.uniform(20.0, 60.0))
         raw["c_reset"] = float(rng.uniform(0.01, 0.08))
+    raw["duration_days"] = _training_duration_days(raw, rng)
     return ScenarioConfig.model_validate(raw)
+
+
+def _training_duration_days(
+    raw: dict[str, object],
+    rng: np.random.Generator,
+) -> int:
+    """Подбирает горизонт, чтобы синтетическая траектория достигала critical."""
+    dp0 = float(raw["dp0_kpa"])
+    dp_critical = float(raw["dp_crit_kpa"])
+    k_c = float(raw["k_c"])
+    beta = float(raw["beta"])
+    c0 = float(raw["c0"])
+    rate = max(float(raw["k_s_per_hour"]), 1e-9)
+    critical_raw = max((dp_critical / dp0 - 1.0) / k_c, 0.0)
+    critical_clog = min(critical_raw, 1.0) ** (1.0 / beta)
+    initial_hours = max(critical_clog - c0, 0.0) / rate
+
+    maintenance_day = raw.get("maintenance_day")
+    if maintenance_day is not None:
+        reset_hours = max(critical_clog - float(raw["c_reset"]), 0.0) / rate
+        required_hours = float(maintenance_day) * 24.0 + reset_hours
+    else:
+        required_hours = initial_hours
+    buffer = float(rng.uniform(1.15, 1.35))
+    return max(60, min(365, int(np.ceil(required_hours * buffer / 24.0))))
 
 
 def corpus_seed_for_run(corpus_seed: int, ordinal: int) -> int:

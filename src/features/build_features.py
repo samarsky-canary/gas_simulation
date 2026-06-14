@@ -13,9 +13,15 @@ FEATURE_COLUMNS = [
     "deltaP_roll_mean_1h",
     "deltaP_roll_std_1h",
     "deltaP_slope_6h",
+    "deltaP_roll_mean_24h",
+    "deltaP_slope_24h",
+    "deltaP_slope_72h",
     "Q_roll_mean_1h",
     "missing_rate_1h",
     "time_above_warn",
+    "elapsed_hours",
+    "hours_since_maintenance",
+    "cumulative_load_h",
 ]
 
 FEATURE_EXPORT_COLUMNS = [
@@ -63,6 +69,24 @@ FEATURE_DESCRIPTIONS = [
         "use": "Контекст режима работы фильтра.",
     },
     {
+        "name": "deltaP_roll_mean_24h",
+        "meaning": "Средний нормированный перепад за последние 24 часа.",
+        "formula": "rolling_mean(deltaP_norm_kPa, 24h)",
+        "use": "Долгосрочный уровень сопротивления фильтра.",
+    },
+    {
+        "name": "deltaP_slope_24h",
+        "meaning": "Скорость роста нормированного перепада за 24 часа.",
+        "formula": "OLS slope(deltaP_norm_kPa ~ time_hours, 24h)",
+        "use": "Среднесрочный наблюдаемый темп деградации.",
+    },
+    {
+        "name": "deltaP_slope_72h",
+        "meaning": "Скорость роста нормированного перепада за 72 часа.",
+        "formula": "OLS slope(deltaP_norm_kPa ~ time_hours, 72h)",
+        "use": "Устойчивый долгосрочный тренд деградации.",
+    },
+    {
         "name": "missing_rate_1h",
         "meaning": "Доля строк с пропусками за последний час.",
         "formula": "rolling_mean(row_has_missing, 1h)",
@@ -74,6 +98,24 @@ FEATURE_DESCRIPTIONS = [
         "formula": "cumulative_sum(deltaP_kPa >= deltaP_warn) * step_hours, reset on maintenance",
         "use": "Интерпретация правил и накопленной нагрузки в тревожной зоне.",
     },
+    {
+        "name": "elapsed_hours",
+        "meaning": "Время от начала текущего прогона.",
+        "formula": "row_index * step_hours",
+        "use": "Возраст наблюдаемой траектории без использования будущих данных.",
+    },
+    {
+        "name": "hours_since_maintenance",
+        "meaning": "Время после последнего обслуживания.",
+        "formula": "cumulative hours with reset on maintenance_event",
+        "use": "Возраст текущего цикла эксплуатации фильтра.",
+    },
+    {
+        "name": "cumulative_load_h",
+        "meaning": "Накопленная нормированная нагрузка по наблюдаемому расходу.",
+        "formula": "cumsum(max(Q / Q_nominal, 0)) * step_hours",
+        "use": "Наблюдаемый интегральный эквивалент наработки.",
+    },
 ]
 
 
@@ -82,6 +124,8 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     features = df.copy()
     one_hour = _window_steps(cfg, hours=1)
     six_hours = _window_steps(cfg, hours=6)
+    twenty_four_hours = _window_steps(cfg, hours=24)
+    seventy_two_hours = _window_steps(cfg, hours=72)
     dt_h = cfg.step_minutes / 60.0
 
     # Нормировка на расход отделяет рост сопротивления фильтра от режима потока.
@@ -95,6 +139,15 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     )
     features["deltaP_slope_6h"] = features["deltaP_norm_kPa"].rolling(
         six_hours, min_periods=max(3, six_hours // 3)
+    ).apply(lambda values: _slope(values, dt_h), raw=True)
+    features["deltaP_roll_mean_24h"] = features["deltaP_norm_kPa"].rolling(
+        twenty_four_hours, min_periods=1
+    ).mean()
+    features["deltaP_slope_24h"] = features["deltaP_norm_kPa"].rolling(
+        twenty_four_hours, min_periods=min(3, twenty_four_hours)
+    ).apply(lambda values: _slope(values, dt_h), raw=True)
+    features["deltaP_slope_72h"] = features["deltaP_norm_kPa"].rolling(
+        seventy_two_hours, min_periods=min(3, seventy_two_hours)
     ).apply(lambda values: _slope(values, dt_h), raw=True)
     features["Q_roll_mean_1h"] = features["q_m3h"].rolling(one_hour, min_periods=1).mean()
 
@@ -111,6 +164,12 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     above_warn = features["delta_p_kpa"].ge(cfg.dp_warn_kpa).fillna(False)
     segment = features["maintenance_event"].fillna(False).astype(bool).cumsum()
     features["time_above_warn"] = above_warn.groupby(segment).cumsum() * dt_h
+    features["elapsed_hours"] = np.arange(len(features), dtype=float) * dt_h
+    features["hours_since_maintenance"] = features.groupby(segment).cumcount() * dt_h
+    normalized_load = (
+        features["q_m3h"].ffill().bfill().clip(lower=0.0) / cfg.q_nominal_m3h
+    )
+    features["cumulative_load_h"] = normalized_load.groupby(segment).cumsum() * dt_h
 
     return features[FEATURE_EXPORT_COLUMNS]
 

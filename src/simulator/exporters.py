@@ -73,7 +73,6 @@ ML_INPUT_COLUMNS = [
     "Q_m3h",
     "T_C",
     "deltaP_norm_kPa",
-    "RUL_analytic_h",
 ]
 
 ML_FORBIDDEN_INPUT_COLUMNS = [

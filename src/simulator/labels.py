@@ -54,14 +54,19 @@ def _rul_oracle(delta_p_true: np.ndarray, cfg: ScenarioConfig) -> np.ndarray:
 
 
 def _rul_analytic(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
-    """Оценивает RUL аналитически через уровень засорения и нормированный critical-порог."""
-    q = df["q_true_m3h"].to_numpy()
-    clog = df["clog_level"].to_numpy()
+    """Оценивает RUL по наблюдаемым данным и калиброванным параметрам фильтра."""
+    q = df["q_m3h"].to_numpy(dtype=float)
+    delta_p_norm = _observed_delta_p_norm(cfg, df).to_numpy(dtype=float)
     c_crit_raw = (cfg.dp_crit_kpa / cfg.dp0_kpa - 1.0) / cfg.k_c
     c_crit = float(np.clip(c_crit_raw, 0.0, 1.0)) ** (1.0 / cfg.beta)
+    resistance = np.maximum(delta_p_norm / cfg.dp0_kpa - 1.0, 0.0)
+    clog = np.clip(resistance / cfg.k_c, 0.0, 1.0) ** (1.0 / cfg.beta)
     load = np.maximum(q / cfg.q_nominal_m3h, 1e-6) ** cfg.gamma_load
     rate = np.maximum(cfg.k_s_per_hour * load, 1e-9)
-    return np.maximum(c_crit - clog, 0.0) / rate
+    result = np.maximum(c_crit - clog, 0.0) / rate
+    invalid = np.isnan(q) | np.isnan(delta_p_norm)
+    result[invalid] = np.nan
+    return result
 
 
 def _true_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:

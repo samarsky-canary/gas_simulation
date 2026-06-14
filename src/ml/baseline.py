@@ -26,10 +26,15 @@ ML_INPUT_COLUMNS = [
     "deltaP_roll_mean_1h",
     "deltaP_roll_std_1h",
     "deltaP_slope_6h",
+    "deltaP_roll_mean_24h",
+    "deltaP_slope_24h",
+    "deltaP_slope_72h",
     "Q_roll_mean_1h",
     "missing_rate_1h",
     "time_above_warn",
-    "RUL_analytic_h",
+    "elapsed_hours",
+    "hours_since_maintenance",
+    "cumulative_load_h",
 ]
 
 ML_OUTPUT_COLUMNS = [
@@ -66,7 +71,7 @@ def train_ml_baseline(
     regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
     metrics = {
         "input_columns": ML_INPUT_COLUMNS,
-        "strategy": "analytic_residual_correction",
+        "strategy": "independent_direct_rul",
         "split": split_info,
         "rul_regressor": reg_metrics,
     }
@@ -209,10 +214,22 @@ def _prepare_dataset(dataset: pd.DataFrame) -> pd.DataFrame:
     data["timestamp"] = pd.to_datetime(data["timestamp"])
     if "run_id" in data.columns:
         data[ML_INPUT_COLUMNS] = data.groupby("run_id")[ML_INPUT_COLUMNS].transform(
-            lambda column: column.ffill().bfill()
+            lambda column: column.ffill()
         )
     else:
-        data[ML_INPUT_COLUMNS] = data[ML_INPUT_COLUMNS].ffill().bfill()
+        data[ML_INPUT_COLUMNS] = data[ML_INPUT_COLUMNS].ffill()
+    zero_at_start = [
+        "deltaP_roll_std_1h",
+        "deltaP_slope_6h",
+        "deltaP_slope_24h",
+        "deltaP_slope_72h",
+        "missing_rate_1h",
+        "time_above_warn",
+        "elapsed_hours",
+        "hours_since_maintenance",
+        "cumulative_load_h",
+    ]
+    data[zero_at_start] = data[zero_at_start].fillna(0.0)
     return data.dropna(subset=ML_INPUT_COLUMNS)
 
 
@@ -228,9 +245,15 @@ def _attach_features(dataset: pd.DataFrame, features: pd.DataFrame | None) -> pd
         "deltaP_roll_mean_1h",
         "deltaP_roll_std_1h",
         "deltaP_slope_6h",
+        "deltaP_roll_mean_24h",
+        "deltaP_slope_24h",
+        "deltaP_slope_72h",
         "Q_roll_mean_1h",
         "missing_rate_1h",
         "time_above_warn",
+        "elapsed_hours",
+        "hours_since_maintenance",
+        "cumulative_load_h",
     ]
     merge_keys = ["timestamp"]
     if "run_id" in dataset.columns and "run_id" in features.columns:
@@ -295,10 +318,9 @@ def _run_id_split_mask(
 def _train_rul_regressor(
     data: pd.DataFrame, train_mask: pd.Series
 ) -> tuple[RandomForestRegressor, dict[str, object]]:
-    """Обучает RandomForest корректировать аналитический RUL до oracle-RUL."""
+    """Обучает независимый RandomForest прогнозировать oracle-RUL по телеметрии."""
     target = "RUL_oracle_h"
-    baseline = "RUL_analytic_h"
-    valid = data[target].notna() & data[baseline].notna()
+    valid = data[target].notna()
     train = data[train_mask & valid]
     test = data[(~train_mask) & valid]
     model = RandomForestRegressor(
@@ -308,16 +330,37 @@ def _train_rul_regressor(
         random_state=42,
         n_jobs=-1,
     )
-    train_residual = train[target] - train[baseline]
-    model.fit(train[ML_INPUT_COLUMNS], train_residual)
-    pred = _corrected_rul_prediction(model, test)
+    sample_weight = _balanced_training_weights(train)
+    model.fit(train[ML_INPUT_COLUMNS], train[target], sample_weight=sample_weight)
+    pred = model.predict(test[ML_INPUT_COLUMNS])
+    analytic_test = test[test["RUL_analytic_h"].notna()]
+    analytic_pred = analytic_test["RUL_analytic_h"].to_numpy()
+    analytic_metrics: dict[str, object] = {
+        **_regression_metrics(analytic_test[target], analytic_pred),
+        "by_scenario": _regression_group_metrics(
+            analytic_test, analytic_pred, target, "scenario"
+        ),
+    }
+    ml_metrics = _regression_metrics(test[target], pred)
+    analytic_mae = analytic_metrics["mae_h"]
+    analytic_rmse = analytic_metrics["rmse_h"]
     metrics = {
         "target": target,
-        "model_target": "RUL_oracle_h - RUL_analytic_h",
-        "baseline": baseline,
+        "model_target": target,
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
-        **_regression_metrics(test[target], pred),
+        **ml_metrics,
+        "analytic_baseline": analytic_metrics,
+        "mae_improvement_vs_analytic_h": (
+            float(analytic_mae) - float(ml_metrics["mae_h"])
+            if analytic_mae is not None and ml_metrics["mae_h"] is not None
+            else None
+        ),
+        "rmse_improvement_vs_analytic_h": (
+            float(analytic_rmse) - float(ml_metrics["rmse_h"])
+            if analytic_rmse is not None and ml_metrics["rmse_h"] is not None
+            else None
+        ),
     }
     metrics["by_run_id"] = _regression_group_metrics(test, pred, target, "run_id")
     metrics["by_scenario"] = _regression_group_metrics(test, pred, target, "scenario")
@@ -374,7 +417,9 @@ def _build_predictions(
             "RUL_oracle_h": data["RUL_oracle_h"],
         }
     )
-    result["RUL_pred_h"] = _corrected_rul_prediction(regressor, data)
+    result["RUL_pred_h"] = np.maximum(
+        regressor.predict(data[ML_INPUT_COLUMNS]), 0.0
+    )
     return result[ML_OUTPUT_COLUMNS]
 
 
@@ -393,22 +438,29 @@ def _build_inference_predictions(
             "RUL_oracle_h": data["RUL_oracle_h"] if "RUL_oracle_h" in data.columns else np.nan,
         }
     )
-    result["RUL_pred_h"] = _corrected_rul_prediction(regressor, data)
+    result["RUL_pred_h"] = np.maximum(
+        regressor.predict(data[ML_INPUT_COLUMNS]), 0.0
+    )
     return result[ML_OUTPUT_COLUMNS]
 
 
-def _corrected_rul_prediction(
-    regressor: RandomForestRegressor,
-    data: pd.DataFrame,
-) -> np.ndarray:
-    """Добавляет ML-коррекцию к физически интерпретируемому аналитическому RUL."""
-    correction = regressor.predict(data[ML_INPUT_COLUMNS])
-    return np.maximum(data["RUL_analytic_h"].to_numpy(dtype=float) + correction, 0.0)
+def _balanced_training_weights(data: pd.DataFrame) -> np.ndarray:
+    """Балансирует вклад прогонов и диапазонов RUL в функцию потерь."""
+    if data.empty:
+        return np.array([], dtype=float)
+    run_counts = data["run_id"].astype(str).value_counts()
+    run_weight = data["run_id"].astype(str).map(lambda value: 1.0 / run_counts[value])
+    bins = pd.qcut(data["RUL_oracle_h"], q=10, duplicates="drop")
+    bin_counts = bins.value_counts()
+    bin_weight = bins.map(lambda value: 1.0 / bin_counts[value]).astype(float)
+    weights = (run_weight.to_numpy(dtype=float) * bin_weight.to_numpy(dtype=float))
+    return weights / weights.mean()
 
 
 def _report_markdown(metrics: dict[str, object]) -> str:
     """Генерирует краткий отчет для магистерской работы: входы, split и метрики."""
     rul = metrics["rul_regressor"]
+    analytic = rul["analytic_baseline"]
     split = metrics["split"]
     split_lines = [
         "## Split",
@@ -430,12 +482,11 @@ def _report_markdown(metrics: dict[str, object]) -> str:
         [
             "# ML baseline",
             "",
-            "Классический baseline обучает одну модель RandomForest:",
+            "Классический baseline обучает независимую модель RandomForest:",
             "",
-            "- `RandomForestRegressor` прогнозирует поправку "
-            "`RUL_oracle_h - RUL_analytic_h`.",
-            "- Итоговый ML-RUL рассчитывается как "
-            "`RUL_analytic_h + ML correction`.",
+            "- `RandomForestRegressor` напрямую прогнозирует `RUL_oracle_h`.",
+            "- Аналитический RUL не используется как вход ML-модели.",
+            "- Строки обучения взвешиваются по `run_id` и диапазонам RUL.",
             "",
             "## Входные признаки",
             "",
@@ -449,6 +500,14 @@ def _report_markdown(metrics: dict[str, object]) -> str:
             f"- MAE: `{_fmt_metric(rul['mae_h'])}` ч.",
             f"- RMSE: `{_fmt_metric(rul['rmse_h'])}` ч.",
             f"- R2: `{_fmt_metric(rul['r2'])}`.",
+            "",
+            "## Сравнение с аналитической оценкой",
+            "",
+            f"- Аналитический MAE: `{_fmt_metric(analytic['mae_h'])}` ч.",
+            f"- Аналитический RMSE: `{_fmt_metric(analytic['rmse_h'])}` ч.",
+            f"- Аналитический R2: `{_fmt_metric(analytic['r2'])}`.",
+            f"- Выигрыш ML по MAE: `{_fmt_metric(rul['mae_improvement_vs_analytic_h'])}` ч.",
+            f"- Выигрыш ML по RMSE: `{_fmt_metric(rul['rmse_improvement_vs_analytic_h'])}` ч.",
             "",
             "### RUL по сценариям",
             "",
