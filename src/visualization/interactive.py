@@ -34,7 +34,24 @@ INTERACTIVE_PLOT_BUILDERS: dict[str, InteractivePlotBuilder] = {
     "rul_source_periods": lambda cfg, data, decisions: _rul_source_periods_plot(
         cfg, decisions
     ),
-    "data_confidence": lambda cfg, data, decisions: _data_confidence_plot(decisions),
+    "data_confidence": lambda cfg, data, decisions: _data_confidence_plot(
+        data, decisions
+    ),
+}
+
+RUL_SOURCE_LABELS = {
+    "ml_baseline": "ML-модель",
+    "conservative_min": "Консервативный минимум",
+    "analytic_fallback": "Аналитическая оценка",
+    "analytic_data_veto": "Аналитика из-за качества данных",
+    "unavailable": "Недоступно",
+}
+
+STATE_VALUE_LABELS = {
+    "unknown": "неизвестно",
+    "normal": "норма",
+    "warning": "предупреждение",
+    "critical": "критическое",
 }
 
 
@@ -65,7 +82,7 @@ def _pressure_plot(df: pd.DataFrame) -> go.Figure:
         go.Scatter(
             x=df["timestamp"],
             y=df["p_in_mpa"],
-            name="P_in",
+            name="Давление до фильтра",
             mode="lines",
             line={"color": "#1f77b4", "width": 1},
         )
@@ -74,7 +91,7 @@ def _pressure_plot(df: pd.DataFrame) -> go.Figure:
         go.Scatter(
             x=df["timestamp"],
             y=df["p_out_mpa"],
-            name="P_out",
+            name="Давление после фильтра",
             mode="lines",
             line={"color": "#ff7f0e", "width": 1},
         )
@@ -93,7 +110,7 @@ def _delta_p_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
         go.Scatter(
             x=df["timestamp"],
             y=df["delta_p_kpa"],
-            name="deltaP наблюдаемый",
+            name="Наблюдаемый перепад",
             mode="lines",
             line={"color": "#d62728", "width": 1},
             opacity=0.65,
@@ -103,7 +120,7 @@ def _delta_p_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
         go.Scatter(
             x=df["timestamp"],
             y=_rolling(df, "delta_p_kpa", cfg, hours=24),
-            name="deltaP, среднее за 24 ч",
+            name="Средний перепад за 24 ч",
             mode="lines",
             line={"color": "#111111", "width": 2},
         )
@@ -111,7 +128,7 @@ def _delta_p_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
     _add_thresholds(fig, cfg.dp_warn_kpa, cfg.dp_crit_kpa, "кПа")
     return _style_figure(
         fig,
-        title="Перепад давления deltaP(t)",
+        title="Перепад давления во времени",
         yaxis_title="Перепад, кПа",
         rangeslider=True,
     )
@@ -120,16 +137,17 @@ def _delta_p_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
 def _state_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
     raw_codes = df["state_obs"].map(STATE_TO_CODE).fillna(-1)
     stable_codes = _stable_state_codes(cfg, df)
+    raw_labels = df["state_obs"].map(STATE_VALUE_LABELS).fillna("неизвестно")
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=df["timestamp"],
             y=raw_codes,
-            name="raw state",
+            name="Исходное состояние",
             mode="lines",
             line={"color": "#9ca3af", "width": 1, "shape": "hv"},
             opacity=0.45,
-            customdata=df["state_obs"],
+            customdata=raw_labels,
             hovertemplate="%{x}<br>Состояние: %{customdata}<extra></extra>",
         )
     )
@@ -137,7 +155,7 @@ def _state_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
         go.Scatter(
             x=df["timestamp"],
             y=stable_codes,
-            name=f"устойчивое состояние, окно {STATE_SMOOTH_HOURS} ч",
+            name=f"Сглаженное состояние, окно {STATE_SMOOTH_HOURS} ч",
             mode="lines",
             line={"color": "#111111", "width": 2, "shape": "hv"},
         )
@@ -145,7 +163,7 @@ def _state_plot(cfg: ScenarioConfig, df: pd.DataFrame) -> go.Figure:
     fig.update_yaxes(tickmode="array", tickvals=STATE_TICKS, ticktext=STATE_LABELS)
     return _style_figure(
         fig,
-        title="Состояние фильтра: raw и сглаженное",
+        title="Состояние фильтра: исходное и сглаженное",
         yaxis_title="Состояние",
         rangeslider=True,
     )
@@ -168,14 +186,18 @@ def _rul_comparison_plot(
         shared_xaxes=True,
         vertical_spacing=0.04,
         subplot_titles=(
-            "RUL oracle",
-            "RUL аналитический",
-            "RUL ML",
-            "RUL гибридный",
+            "Эталонный остаточный ресурс",
+            "Аналитический остаточный ресурс",
+            "Остаточный ресурс по ML",
+            "Итоговый остаточный ресурс",
         ),
     )
-    _add_line(fig, 1, rul_data, "rul_oracle_h", "RUL oracle", "#4b5563")
-    _add_line(fig, 2, rul_data, "rul_analytic_h", "RUL аналитический", "#8c564b")
+    _add_line(
+        fig, 1, rul_data, "rul_oracle_h", "Эталонный остаточный ресурс", "#4b5563"
+    )
+    _add_line(
+        fig, 2, rul_data, "rul_analytic_h", "Аналитический остаточный ресурс", "#8c564b"
+    )
     if decisions is not None:
         hourly = (
             decisions.set_index("timestamp")[["RUL_ml_h", "RUL_fused_h"]]
@@ -183,16 +205,18 @@ def _rul_comparison_plot(
             .mean()
             .reset_index()
         )
-        _add_line(fig, 3, hourly, "RUL_ml_h", "RUL ML", "#1f77b4")
-        _add_line(fig, 4, hourly, "RUL_fused_h", "RUL гибридный", "#d62728")
+        _add_line(fig, 3, hourly, "RUL_ml_h", "Остаточный ресурс по ML", "#1f77b4")
+        _add_line(
+            fig, 4, hourly, "RUL_fused_h", "Итоговый остаточный ресурс", "#d62728"
+        )
 
     for row in range(1, 5):
         _add_subplot_thresholds(fig, cfg, row)
-        fig.update_yaxes(title_text="RUL, ч", row=row, col=1)
+        fig.update_yaxes(title_text="Остаточный ресурс, ч", row=row, col=1)
     fig.update_xaxes(title_text="Время", row=4, col=1)
     return _style_figure(
         fig,
-        title="Сравнение оценок RUL, среднее за 1 час",
+        title="Сравнение оценок остаточного ресурса, среднее за 1 час",
         height=900,
     )
 
@@ -211,15 +235,30 @@ def _rul_source_periods_plot(
         vertical_spacing=0.07,
         row_heights=[0.4, 0.16, 0.2, 0.24],
         subplot_titles=(
-            "Оценки RUL",
-            "Выбранный источник RUL",
+            "Оценки остаточного ресурса",
+            "Выбранный источник остаточного ресурса",
             "Доверие",
             "Количество решений по источникам за 7 дней",
         ),
     )
-    _add_line(fig, 1, plot_data, "RUL_ml_h", "RUL ML", "#1f77b4")
-    _add_line(fig, 1, plot_data, "RUL_analytic_h", "RUL аналитический", "#8c564b")
-    _add_line(fig, 1, plot_data, "RUL_fused_h", "RUL итоговый", "#d62728", width=2)
+    _add_line(fig, 1, plot_data, "RUL_ml_h", "Остаточный ресурс по ML", "#1f77b4")
+    _add_line(
+        fig,
+        1,
+        plot_data,
+        "RUL_analytic_h",
+        "Аналитический остаточный ресурс",
+        "#8c564b",
+    )
+    _add_line(
+        fig,
+        1,
+        plot_data,
+        "RUL_fused_h",
+        "Итоговый остаточный ресурс",
+        "#d62728",
+        width=2,
+    )
     _add_subplot_thresholds(fig, cfg, 1)
 
     sources = [
@@ -234,10 +273,13 @@ def _rul_source_periods_plot(
             go.Scatter(
                 x=subset["timestamp"],
                 y=[positions[source]] * len(subset),
-                name=source,
+                name=RUL_SOURCE_LABELS.get(source, source),
                 mode="markers",
                 marker={"color": RUL_SOURCE_COLORS[source], "size": 8, "symbol": "square"},
-                hovertemplate=f"%{{x}}<br>{source}<extra></extra>",
+                hovertemplate=(
+                    f"%{{x}}<br>{RUL_SOURCE_LABELS.get(source, source)}"
+                    "<extra></extra>"
+                ),
             ),
             row=2,
             col=1,
@@ -245,18 +287,18 @@ def _rul_source_periods_plot(
     fig.update_yaxes(
         tickmode="array",
         tickvals=list(positions.values()),
-        ticktext=list(positions.keys()),
+        ticktext=[RUL_SOURCE_LABELS.get(source, source) for source in positions],
         row=2,
         col=1,
     )
 
-    _add_line(fig, 3, plot_data, "confidence_total", "confidence_total", "#111111")
+    _add_line(fig, 3, plot_data, "confidence_total", "Итоговое доверие", "#111111")
     _add_line(
         fig,
         3,
         plot_data,
         "confidence_consistency",
-        "confidence_consistency",
+        "Согласованность ML и аналитической оценки",
         "#ff7f0e",
     )
     fig.add_hline(y=0.65, line_dash="dot", line_color="#1f77b4", row=3, col=1)
@@ -280,46 +322,74 @@ def _rul_source_periods_plot(
                 row=4,
                 col=1,
             )
-    fig.update_yaxes(title_text="RUL, ч", row=1, col=1)
+    fig.update_yaxes(title_text="Остаточный ресурс, ч", row=1, col=1)
     fig.update_yaxes(title_text="Источник", row=2, col=1)
     fig.update_yaxes(title_text="0...1", row=3, col=1)
     fig.update_yaxes(title_text="Решений", row=4, col=1)
     return _style_figure(
         fig,
-        title="Периоды предпочтения источника RUL",
+        title="Периоды предпочтения источника остаточного ресурса",
         height=1000,
     )
 
 
-def _data_confidence_plot(decisions: pd.DataFrame | None) -> go.Figure:
+def _data_confidence_plot(
+    telemetry: pd.DataFrame,
+    decisions: pd.DataFrame | None,
+) -> go.Figure:
     _require_decisions(decisions)
-    hourly = (
+    confidence_hourly = (
         decisions.set_index("timestamp")
         .resample("1h")
         .agg(
-            confidence_mean=("confidence_data", "mean"),
-            missing_rate_mean=("missing_rate_1h", "mean"),
+            data_confidence_mean=("confidence_data", "mean"),
             consistency_mean=("confidence_consistency", "mean"),
+            total_confidence_mean=("confidence_total", "mean"),
         )
         .reset_index()
     )
+    quality_hourly, missing_percent, spike_percent = _quality_issue_summary(telemetry)
     fig = make_subplots(
-        rows=3,
+        rows=2,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.06,
+        vertical_spacing=0.12,
+        row_heights=[0.58, 0.42],
         subplot_titles=(
-            "Доверие к данным",
-            "Доля пропусков",
-            "Согласованность ML и аналитического RUL",
+            "Доверие к прогнозу",
+            "Пропуски и всплески телеметрии",
         ),
     )
-    _add_line(fig, 1, hourly, "confidence_mean", "C_data", "#1f77b4")
+    _add_line(
+        fig,
+        1,
+        confidence_hourly,
+        "data_confidence_mean",
+        "Доверие к данным",
+        "#1f77b4",
+    )
+    _add_line(
+        fig,
+        1,
+        confidence_hourly,
+        "consistency_mean",
+        "Согласованность ML и аналитической оценки",
+        "#2ca02c",
+    )
+    _add_line(
+        fig,
+        1,
+        confidence_hourly,
+        "total_confidence_mean",
+        "Итоговое доверие к прогнозу",
+        "#111111",
+        width=2,
+    )
     fig.add_hline(y=0.45, line_dash="dash", line_color="#ff7f0e", row=1, col=1)
     fig.add_trace(
         go.Scatter(
-            x=hourly["timestamp"],
-            y=hourly["missing_rate_mean"] * 100,
+            x=quality_hourly["timestamp"],
+            y=quality_hourly["missing_percent"],
             name="Пропуски",
             mode="lines",
             line={"color": "#9467bd", "width": 1.5},
@@ -330,20 +400,82 @@ def _data_confidence_plot(decisions: pd.DataFrame | None) -> go.Figure:
     )
     fig.add_trace(
         go.Scatter(
-            x=hourly["timestamp"],
-            y=hourly["consistency_mean"] * 100,
-            name="Согласованность",
+            x=quality_hourly["timestamp"],
+            y=quality_hourly["spike_percent"],
+            name="Всплески",
             mode="lines",
-            line={"color": "#2ca02c", "width": 1.5},
+            line={"color": "#d62728", "width": 1.5},
+            fill="tozeroy",
         ),
-        row=3,
+        row=2,
         col=1,
     )
-    fig.update_yaxes(title_text="C_data", range=[-0.02, 1.02], row=1, col=1)
-    fig.update_yaxes(title_text="Пропуски, %", rangemode="tozero", row=2, col=1)
-    fig.update_yaxes(title_text="Согласованность, %", range=[-2, 102], row=3, col=1)
-    fig.update_xaxes(title_text="Время", row=3, col=1)
-    return _style_figure(fig, title="Доверие к данным телеметрии", height=800)
+    fig.add_annotation(
+        x=1,
+        y=0.39,
+        xref="paper",
+        yref="paper",
+        xanchor="right",
+        yanchor="bottom",
+        text=(
+            f"<b>За весь период:</b> пропуски {missing_percent:.2f}% · "
+            f"всплески {spike_percent:.2f}%"
+        ),
+        showarrow=False,
+        bgcolor="rgba(255,255,255,0.9)",
+        bordercolor="#9ca3af",
+        borderwidth=1,
+    )
+    fig.update_yaxes(title_text="Доверие, 0…1", range=[-0.02, 1.02], row=1, col=1)
+    fig.update_yaxes(
+        title_text="Доля строк, %",
+        rangemode="tozero",
+        row=2,
+        col=1,
+    )
+    fig.update_xaxes(title_text="Время", row=2, col=1)
+    return _style_figure(
+        fig,
+        title="Доверие к прогнозу и качество телеметрии",
+        height=760,
+    )
+
+
+def _quality_issue_summary(
+    telemetry: pd.DataFrame,
+) -> tuple[pd.DataFrame, float, float]:
+    """Считает часовые и общие доли строк с пропусками и всплесками."""
+    sensor_columns = [
+        column
+        for column in ("p_in_mpa", "p_out_mpa", "delta_p_kpa", "q_m3h", "t_c")
+        if column in telemetry.columns
+    ]
+    missing = telemetry[sensor_columns].isna().any(axis=1)
+    if "quality_code" in telemetry.columns:
+        missing |= telemetry["quality_code"].eq("missing")
+    spike = (
+        telemetry["spike_event"].fillna(False).astype(bool)
+        if "spike_event" in telemetry.columns
+        else pd.Series(False, index=telemetry.index)
+    )
+    quality = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(telemetry["timestamp"]),
+            "missing": missing.astype(float),
+            "spike": spike.astype(float),
+        }
+    )
+    hourly = (
+        quality.set_index("timestamp")
+        .resample("1h")
+        .agg(
+            missing_percent=("missing", "mean"),
+            spike_percent=("spike", "mean"),
+        )
+        .mul(100)
+        .reset_index()
+    )
+    return hourly, float(missing.mean() * 100), float(spike.mean() * 100)
 
 
 def _add_line(
@@ -379,13 +511,13 @@ def _add_thresholds(
         y=warning,
         line_dash="dash",
         line_color="#ffbf00",
-        annotation_text=f"warning: {warning:g} {unit}",
+        annotation_text=f"Порог предупреждения: {warning:g} {unit}",
     )
     fig.add_hline(
         y=critical,
         line_dash="dash",
         line_color="#7f0000",
-        annotation_text=f"critical: {critical:g} {unit}",
+        annotation_text=f"Критический порог: {critical:g} {unit}",
     )
 
 
@@ -408,7 +540,7 @@ def _add_subplot_thresholds(fig: go.Figure, cfg: ScenarioConfig, row: int) -> No
 
 def _require_decisions(decisions: pd.DataFrame | None) -> None:
     if decisions is None or decisions.empty:
-        raise ValueError("Hybrid decisions are required for this plot.")
+        raise ValueError("Для этого графика необходимы гибридные решения.")
 
 
 def _style_figure(

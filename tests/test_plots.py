@@ -10,7 +10,10 @@ from src.simulator.config import ScenarioConfig
 from src.simulator.exporters import build_canonical_dataset
 from src.simulator.runner import run_scenario
 from src.visualization import build_interactive_plot, build_plots
-from src.visualization.interactive import INTERACTIVE_PLOT_BUILDERS
+from src.visualization.interactive import (
+    INTERACTIVE_PLOT_BUILDERS,
+    _quality_issue_summary,
+)
 from src.visualization.plots import _aggregate_rul_source_plot_data
 
 
@@ -92,3 +95,25 @@ def test_all_interactive_plots_are_plotly_figures(tmp_path) -> None:
     }
     assert all(isinstance(figure, go.Figure) for figure in figures.values())
     assert all(len(figure.data) > 0 for figure in figures.values())
+
+
+def test_quality_issue_summary_reports_total_percentages() -> None:
+    telemetry = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-01", periods=4, freq="30min"),
+            "p_in_mpa": [0.6, None, 0.6, 0.6],
+            "p_out_mpa": [0.5, 0.5, 0.5, 0.5],
+            "delta_p_kpa": [1.0, None, 1.0, 1.0],
+            "q_m3h": [600.0] * 4,
+            "t_c": [15.0] * 4,
+            "quality_code": ["good", "missing", "good", "good"],
+            "spike_event": [False, False, True, False],
+        }
+    )
+
+    hourly, missing_percent, spike_percent = _quality_issue_summary(telemetry)
+
+    assert missing_percent == 25.0
+    assert spike_percent == 25.0
+    assert hourly["missing_percent"].tolist() == [50.0, 0.0]
+    assert hourly["spike_percent"].tolist() == [0.0, 50.0]

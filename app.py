@@ -18,9 +18,9 @@ GRAPH_CHOICES = {
     "Давление до и после фильтра": "pressure",
     "Перепад deltaP": "delta_p",
     "Состояние фильтра": "state",
-    "Сравнение RUL": "rul_comparison",
-    "Периоды предпочтения RUL": "rul_source_periods",
-    "Доверие к данным": "data_confidence",
+    "Сравнение остаточного ресурса": "rul_comparison",
+    "Источник остаточного ресурса": "rul_source_periods",
+    "Доверие и качество данных": "data_confidence",
 }
 
 SCENARIO_LABELS = {
