@@ -362,9 +362,7 @@ def _randomized_ml_config(
     raw = base_cfg.model_dump()
     raw.update(SCENARIO_OVERRIDES[scenario_name])
 
-    q_nominal = float(rng.uniform(450.0, 850.0))
     p_nominal = float(rng.uniform(0.45, 0.8))
-    dp_warn = float(rng.uniform(4.0, 6.5))
     scenario_k_s = float(raw["k_s_per_hour"])
     raw.update(
         {
@@ -373,9 +371,6 @@ def _randomized_ml_config(
             "duration_days": int(rng.integers(60, 121)),
             "step_minutes": step_minutes,
             "seed": corpus_seed_for_run(corpus_seed, ordinal),
-            "q_nominal_m3h": q_nominal,
-            "q_min_m3h": q_nominal * float(rng.uniform(0.18, 0.35)),
-            "q_max_m3h": q_nominal * float(rng.uniform(1.7, 2.2)),
             "a_q": float(rng.uniform(0.06, 0.25)),
             "q_weekly_amp": float(rng.uniform(0.0, 0.12)),
             "q_process_std_m3h": float(rng.uniform(15.0, 90.0)),
@@ -385,15 +380,8 @@ def _randomized_ml_config(
             "a_p_mpa": float(rng.uniform(0.005, 0.03)),
             "t_nominal_c": float(rng.uniform(5.0, 25.0)),
             "a_t_c": float(rng.uniform(2.0, 10.0)),
-            "dp0_kpa": float(rng.uniform(0.8, 1.8)),
-            "dp_warn_kpa": dp_warn,
-            "dp_crit_kpa": dp_warn + float(rng.uniform(3.5, 7.0)),
             "c0": float(rng.uniform(0.01, 0.2)),
             "k_s_per_hour": scenario_k_s * float(rng.uniform(0.65, 1.45)),
-            "alpha_flow": float(rng.uniform(1.7, 2.3)),
-            "gamma_load": float(rng.uniform(0.8, 1.3)),
-            "k_c": float(rng.uniform(6.0, 11.0)),
-            "beta": float(rng.uniform(0.85, 1.3)),
             "sigma_p_mpa": float(rng.uniform(0.0001, 0.0008)),
             "sigma_q_rel": float(rng.uniform(0.003, 0.03)),
             "sigma_t_abs_c": float(rng.uniform(0.1, 0.8)),

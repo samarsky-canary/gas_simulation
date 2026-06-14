@@ -6,5 +6,6 @@ pyarrow
 PyYAML
 pytest
 matplotlib
+plotly
 scikit-learn
 streamlit

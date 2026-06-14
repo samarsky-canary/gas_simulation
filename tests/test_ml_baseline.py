@@ -11,7 +11,7 @@ from src.ml import (
     train_ml_baseline,
 )
 from src.simulator.config import ScenarioConfig
-from src.simulator.exporters import export_run
+from src.simulator.exporters import build_canonical_dataset, export_run
 from src.simulator.runner import run_scenario
 
 
@@ -95,6 +95,36 @@ def test_ml_baseline_predicts_from_in_memory_model(tmp_path) -> None:
     assert set(predictions["split"]) == {"inference"}
     assert "rul_model" not in paths
     assert paths["ml_predictions_parquet"].exists()
+
+
+def test_ml_baseline_corrects_analytic_rul_instead_of_replacing_it(tmp_path) -> None:
+    cfg = ScenarioConfig(
+        duration_days=90,
+        step_minutes=60,
+        k_s_per_hour=0.00045,
+        p_missing=0,
+        p_spike=0,
+        p_stuck=0,
+    )
+    df, _ = run_scenario(cfg)
+    dataset = build_canonical_dataset(cfg, df)
+    features = build_features(cfg, df)
+    trained = train_ml_baseline(dataset, features)
+
+    predictions, _ = predict_and_export_ml_baseline(
+        dataset,
+        tmp_path,
+        None,
+        features,
+        model=trained.model,
+        metrics=trained.metrics,
+        report=trained.report,
+    )
+
+    first_analytic = float(dataset["RUL_analytic_h"].iloc[0])
+    first_prediction = float(predictions["RUL_pred_h"].iloc[0])
+    assert trained.metrics["strategy"] == "analytic_residual_correction"
+    assert abs(first_prediction - first_analytic) < 0.25 * first_analytic
 
 
 def test_randomized_training_corpus_has_independent_runs() -> None:

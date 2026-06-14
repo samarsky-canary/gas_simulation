@@ -3,24 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from main import run_pipeline
 from src.simulator.config import SCENARIO_OVERRIDES, load_config, load_config_with_overrides
+from src.visualization import build_interactive_plot
 
 
 BASE_CONFIG_PATH = Path("configs/base.yaml")
 OUTPUT_ROOT = Path("outputs/ui_runs")
 
 GRAPH_CHOICES = {
-    "Расход": "q",
     "Давление до и после фильтра": "pressure",
     "Перепад deltaP": "delta_p",
     "Состояние фильтра": "state",
     "Сравнение RUL": "rul_comparison",
     "Периоды предпочтения RUL": "rul_source_periods",
     "Доверие к данным": "data_confidence",
-    "Доля выбросов": "spike_rate",
 }
 
 SCENARIO_LABELS = {
@@ -34,6 +34,12 @@ SCENARIO_LABELS = {
     "maintenance_reset": "Обслуживание со сбросом засорения",
 }
 SCENARIO_CODES = {label: code for code, label in SCENARIO_LABELS.items()}
+
+
+@st.cache_data(show_spinner=False)
+def _read_parquet(path: str) -> pd.DataFrame:
+    """Кэширует таблицы завершенного запуска между переключениями графиков."""
+    return pd.read_parquet(path)
 
 
 def main() -> None:
@@ -147,8 +153,25 @@ def main() -> None:
         horizontal=True,
     )
     plot_key = GRAPH_CHOICES[graph_label]
-    plot_path = result.plot_paths[plot_key]
-    st.image(str(plot_path), use_container_width=True)
+    telemetry = _read_parquet(str(result.export_paths["wide_debug_parquet"]))
+    hybrid_decisions = _read_parquet(
+        str(result.hybrid_paths["hybrid_decisions_parquet"])
+    )
+    figure = build_interactive_plot(
+        plot_key,
+        result.cfg,
+        telemetry,
+        hybrid_decisions,
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        config={
+            "displaylogo": False,
+            "scrollZoom": True,
+            "responsive": True,
+        },
+    )
 
     with st.expander("Сводка решений"):
         st.text(result.decision_summary)

@@ -29,6 +29,7 @@ ML_INPUT_COLUMNS = [
     "Q_roll_mean_1h",
     "missing_rate_1h",
     "time_above_warn",
+    "RUL_analytic_h",
 ]
 
 ML_OUTPUT_COLUMNS = [
@@ -65,6 +66,7 @@ def train_ml_baseline(
     regressor, reg_metrics = _train_rul_regressor(prepared, train_mask)
     metrics = {
         "input_columns": ML_INPUT_COLUMNS,
+        "strategy": "analytic_residual_correction",
         "split": split_info,
         "rul_regressor": reg_metrics,
     }
@@ -293,9 +295,10 @@ def _run_id_split_mask(
 def _train_rul_regressor(
     data: pd.DataFrame, train_mask: pd.Series
 ) -> tuple[RandomForestRegressor, dict[str, object]]:
-    """Обучает RandomForestRegressor предсказывать oracle-RUL по наблюдаемым признакам."""
+    """Обучает RandomForest корректировать аналитический RUL до oracle-RUL."""
     target = "RUL_oracle_h"
-    valid = data[target].notna()
+    baseline = "RUL_analytic_h"
+    valid = data[target].notna() & data[baseline].notna()
     train = data[train_mask & valid]
     test = data[(~train_mask) & valid]
     model = RandomForestRegressor(
@@ -305,10 +308,13 @@ def _train_rul_regressor(
         random_state=42,
         n_jobs=-1,
     )
-    model.fit(train[ML_INPUT_COLUMNS], train[target])
-    pred = model.predict(test[ML_INPUT_COLUMNS])
+    train_residual = train[target] - train[baseline]
+    model.fit(train[ML_INPUT_COLUMNS], train_residual)
+    pred = _corrected_rul_prediction(model, test)
     metrics = {
         "target": target,
+        "model_target": "RUL_oracle_h - RUL_analytic_h",
+        "baseline": baseline,
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
         **_regression_metrics(test[target], pred),
@@ -368,7 +374,7 @@ def _build_predictions(
             "RUL_oracle_h": data["RUL_oracle_h"],
         }
     )
-    result["RUL_pred_h"] = regressor.predict(data[ML_INPUT_COLUMNS])
+    result["RUL_pred_h"] = _corrected_rul_prediction(regressor, data)
     return result[ML_OUTPUT_COLUMNS]
 
 
@@ -387,8 +393,17 @@ def _build_inference_predictions(
             "RUL_oracle_h": data["RUL_oracle_h"] if "RUL_oracle_h" in data.columns else np.nan,
         }
     )
-    result["RUL_pred_h"] = regressor.predict(data[ML_INPUT_COLUMNS])
+    result["RUL_pred_h"] = _corrected_rul_prediction(regressor, data)
     return result[ML_OUTPUT_COLUMNS]
+
+
+def _corrected_rul_prediction(
+    regressor: RandomForestRegressor,
+    data: pd.DataFrame,
+) -> np.ndarray:
+    """Добавляет ML-коррекцию к физически интерпретируемому аналитическому RUL."""
+    correction = regressor.predict(data[ML_INPUT_COLUMNS])
+    return np.maximum(data["RUL_analytic_h"].to_numpy(dtype=float) + correction, 0.0)
 
 
 def _report_markdown(metrics: dict[str, object]) -> str:
@@ -417,7 +432,10 @@ def _report_markdown(metrics: dict[str, object]) -> str:
             "",
             "Классический baseline обучает одну модель RandomForest:",
             "",
-            "- `RandomForestRegressor` для прогноза `RUL_oracle_h`.",
+            "- `RandomForestRegressor` прогнозирует поправку "
+            "`RUL_oracle_h - RUL_analytic_h`.",
+            "- Итоговый ML-RUL рассчитывается как "
+            "`RUL_analytic_h + ML correction`.",
             "",
             "## Входные признаки",
             "",

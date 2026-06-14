@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 
+from src.features import build_features
+from src.hybrid import build_hybrid_decisions
+from src.ml import predict_ml_baseline, train_and_export_ml_baseline
 from src.simulator.config import ScenarioConfig
+from src.simulator.exporters import build_canonical_dataset
 from src.simulator.runner import run_scenario
-from src.visualization import build_plots
+from src.visualization import build_interactive_plot, build_plots
+from src.visualization.interactive import INTERACTIVE_PLOT_BUILDERS
 from src.visualization.plots import _aggregate_rul_source_plot_data
 
 
@@ -53,3 +59,36 @@ def test_rul_source_plot_data_is_aggregated_hourly() -> None:
         "ml_baseline",
         "conservative_min",
     ]
+
+
+def test_all_interactive_plots_are_plotly_figures(tmp_path) -> None:
+    cfg = ScenarioConfig(
+        duration_days=30,
+        step_minutes=60,
+        k_s_per_hour=0.003,
+        p_missing=0,
+        p_spike=0,
+        p_stuck=0,
+    )
+    df, _ = run_scenario(cfg)
+    dataset = build_canonical_dataset(cfg, df)
+    features = build_features(cfg, df)
+    paths = train_and_export_ml_baseline(dataset, tmp_path, features)
+    predictions = predict_ml_baseline(dataset, paths["rul_model"], features)
+    decisions = build_hybrid_decisions(cfg, dataset, features, predictions)
+
+    figures = {
+        key: build_interactive_plot(key, cfg, df, decisions)
+        for key in INTERACTIVE_PLOT_BUILDERS
+    }
+
+    assert set(figures) == {
+        "pressure",
+        "delta_p",
+        "state",
+        "rul_comparison",
+        "rul_source_periods",
+        "data_confidence",
+    }
+    assert all(isinstance(figure, go.Figure) for figure in figures.values())
+    assert all(len(figure.data) > 0 for figure in figures.values())
