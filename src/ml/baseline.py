@@ -441,6 +441,7 @@ def _build_inference_predictions(
     return result[ML_OUTPUT_COLUMNS]
 
 
+""" не переобучайся на самые частые прогоны и самые частые участки RUL """
 def _balanced_training_weights(data: pd.DataFrame) -> np.ndarray:
     """Балансирует вклад прогонов и диапазонов RUL в функцию потерь."""
     if data.empty:

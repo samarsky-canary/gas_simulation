@@ -1,6 +1,6 @@
 # Gas Filter Simulator
 
-Прототип полуфизического симулятора одного газового фильтра для генерации синтетической телеметрии, диагностических меток и RUL-бейзлайнов.
+Прототип полуфизического симулятора одного газового фильтра для генерации синтетической телеметрии, диагностических меток и RUL-прогнозов.
 
 ## Запуск
 
@@ -82,10 +82,8 @@ pipeline сохраняет только Parquet, чтобы не дублиро
 - `wide_debug.parquet` - полный набор для отладки.
 - `operations_description.md` - описание операций симулятора от загрузки конфига до экспорта.
 - `metadata.json` - конфигурация, seed, версия схемы, QC-отчет и описание операций.
-- `features.parquet` - таблица признаков для baseline-моделей и интерпретации правил.
+- `features.parquet` - таблица признаков для ML-модели, гибридного слоя и графиков.
 - `feature_description.md` - описание признаков, формул и назначения.
-- `rule_baseline.parquet` - результат регламентно-логической baseline-модели.
-- `rule_baseline_description.md` - описание правил состояния и рекомендаций.
 - `ml_baseline/` - предсказания и копия метрик/отчета использованного обучения.
 
 ## Хранение обучений
@@ -135,12 +133,11 @@ PostgreSQL использует две таблицы:
 7. Инжекция пропусков, выбросов и залипания датчиков.
 8. Проверка качества данных и физических ограничений.
 9. Расчет диагностических состояний, тревоги и RUL.
-10. Расчет признаков для baseline-моделей и интерпретации правил.
-11. Расчет rule-based baseline: состояние фильтра и рекомендация обслуживания.
-12. Inference готового ML-baseline RandomForestRegressor для RUL.
-13. Построение гибридных решений на основе ML-прогноза, аналитического RUL и правил.
-14. Экспорт Parquet и metadata без дублирующих CSV.
-15. Интерактивная визуализация доступна в Streamlit UI через Plotly.
+10. Расчет признаков для ML-модели, гибридного слоя и графиков.
+11. Inference готового ML-baseline RandomForestRegressor для RUL.
+12. Построение гибридного RUL на основе ML-прогноза, аналитического RUL и доверия к данным.
+13. Экспорт Parquet и metadata без дублирующих CSV.
+14. Интерактивная визуализация доступна в Streamlit UI через Plotly.
 
 ## Признаки
 
@@ -161,22 +158,6 @@ Feature builder создает минимальный набор признак�
 Подробные функции расчета каждого признака вынесены в `docs/feature_calculation_functions.md`.
 Функции расчета сырых наблюдаемых метрик описаны в `docs/raw_metric_calculation_functions.md`.
 Подробная аналитическая оценка параметров описана в `docs/analytic_estimation.md`.
-
-## Rule-Based Baseline
-
-Правила состояния:
-
-- `delta_p_kpa < dp_warn_kpa` -> `normal`.
-- `dp_warn_kpa <= delta_p_kpa < dp_crit_kpa` -> `warning`.
-- `delta_p_kpa >= dp_crit_kpa` -> `critical`.
-- пропуск `delta_p_kpa` или `quality_code = missing` -> `unknown`.
-
-Правила рекомендаций:
-
-- `rul_analytic_h < 72` -> `planned_maintenance`.
-- `rul_analytic_h < 12` -> `urgent_maintenance`.
-- `rule_state = critical` повышает рекомендацию до `urgent_maintenance`.
-- `rule_state = unknown` -> `inspect_sensor_data`.
 
 ## ML Baseline
 

@@ -13,7 +13,6 @@ from src.hybrid import (
     export_hybrid_decisions,
 )
 from src.ml import predict_and_export_ml_baseline, train_ml_baseline
-from src.rules import apply_rule_baseline, export_rule_baseline
 from src.simulator.config import SCENARIO_OVERRIDES, ScenarioConfig, load_config
 from src.simulator.exporters import build_canonical_dataset, export_run
 from src.simulator.runner import run_scenario
@@ -35,9 +34,6 @@ OUTPUT_LABELS = {
     "features_csv": "признаки CSV",
     "features_parquet": "признаки Parquet",
     "feature_description": "описание признаков",
-    "rule_baseline_csv": "rule-based baseline CSV",
-    "rule_baseline_parquet": "rule-based baseline Parquet",
-    "rule_baseline_description": "описание rule-based baseline",
     "ml_predictions_csv": "ML baseline предсказания CSV",
     "ml_predictions_parquet": "ML baseline предсказания Parquet",
     "ml_metrics_json": "ML baseline метрики JSON",
@@ -74,7 +70,6 @@ class PipelineResult:
     quality_issue_rows: int
     export_paths: dict[str, Path]
     feature_paths: dict[str, Path]
-    rule_paths: dict[str, Path]
     ml_paths: dict[str, Path]
     hybrid_paths: dict[str, Path]
 
@@ -84,15 +79,13 @@ def run_pipeline(
     output_dir: Path | None = None,
     training_repository: TrainingRepository | None = None,
 ) -> PipelineResult:
-    """Запускает симуляцию, экспорт, признаки, baseline-модели и гибридную логику."""
+    """Запускает симуляцию, экспорт, признаки, ML и гибридную логику."""
     df, report = run_scenario(cfg)
     output_dir = output_dir or Path("outputs") / cfg.scenario_name
     paths = export_run(cfg, df, report, output_dir, export_csv=False)
     dataset = build_canonical_dataset(cfg, df)
     features = build_features(cfg, df)
     feature_paths = export_features(cfg, features, output_dir, export_csv=False)
-    rule_baseline = apply_rule_baseline(cfg, df)
-    rule_paths = export_rule_baseline(cfg, rule_baseline, output_dir, export_csv=False)
     repository = training_repository or TrainingRepository.from_env()
     repository.initialize()
     stored_training = repository.load_latest()
@@ -118,14 +111,13 @@ def run_pipeline(
         quality_issue_rows=report.rows_with_quality_issues,
         export_paths=paths,
         feature_paths=feature_paths,
-        rule_paths=rule_paths,
         ml_paths=ml_paths,
         hybrid_paths=hybrid_paths,
     )
 
 
 def main() -> None:
-    """Запускает полный конвейер: симуляция, экспорт, признаки, правила и графики."""
+    """Запускает полный конвейер: симуляция, экспорт, признаки, ML и гибридный RUL."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--train-ml",
@@ -188,10 +180,6 @@ def main() -> None:
         print(f"- {label}: {path}")
     print("Созданные признаки:")
     for name, path in result.feature_paths.items():
-        label = OUTPUT_LABELS.get(name, name)
-        print(f"- {label}: {path}")
-    print("Создан rule-based baseline:")
-    for name, path in result.rule_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
     print("Обучен ML baseline:")

@@ -12,7 +12,6 @@
 симулятор
 -> фиксированный датасет
 -> feature builder
--> rule-based baseline
 -> RandomForest ML baseline
 -> confidence
 -> RUL_fused_h + rul_source
@@ -34,7 +33,6 @@
 - Симулятор эксплуатации фильтра.
 - Экспорт CSV/Parquet.
 - Feature builder.
-- Rule-based baseline.
 - RandomForestRegressor для `RUL_oracle_h`.
 - Гибридный RUL fusion.
 - Интерактивные Plotly-графики.

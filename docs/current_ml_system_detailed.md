@@ -7,9 +7,8 @@ configs/base.yaml
 -> симулятор
 -> таблицы CSV/Parquet
 -> feature builder
--> rule-based baseline
 -> RandomForest ML baseline
--> reasoner / recommendation engine
+-> hybrid RUL fusion
 -> графики и таблицы UI
 ```
 
@@ -29,11 +28,9 @@ configs/base.yaml
 2. Запускает симулятор и получает общий DataFrame `df`.
 3. Экспортирует наблюдаемые данные, скрытые метки, debug-таблицу и фиксированный датасет.
 4. Строит признаки feature builder.
-5. Строит rule-based baseline.
-6. Обучает классическую ML baseline-модель RandomForest для RUL.
-7. Передаёт датасет, признаки и ML-предсказания в рекомендательный слой.
-8. Строит графики.
-9. Печатает в консоль список созданных файлов и краткую сводку решений.
+5. Выполняет inference готовой ML baseline-модели RandomForest для RUL.
+6. Передаёт датасет, признаки и ML-предсказания в гибридный RUL fusion.
+7. Печатает в консоль список созданных файлов.
 
 ## 2. Как описывается объект и датчики в `base.yaml`
 
@@ -656,80 +653,7 @@ time_above_warn = cumulative_sum(above_warn) * dt_h
 
 Сброс в этом признаке не применяется: накопление идет от начала прогона.
 
-## 7. Rule-Based Baseline
-
-Rule-based baseline строится отдельно от ML:
-
-```python
-rule_baseline = apply_rule_baseline(cfg, df)
-```
-
-Выходные файлы:
-
-```text
-rule_baseline.csv
-rule_baseline.parquet
-rule_baseline_ru.csv
-rule_baseline_description.md
-```
-
-### 7.1. Колонки rule baseline
-
-| Колонка | Смысл |
-|---|---|
-| `run_id` | Идентификатор прогона. |
-| `timestamp` | Время. |
-| `filter_id` | Фильтр. |
-| `scenario_id` | Сценарий. |
-| `delta_p_kpa` | Сырой наблюдаемый перепад. |
-| `delta_p_norm_kpa` | Нормированный перепад для правил. |
-| `rul_analytic_h` | Аналитический RUL. |
-| `quality_code` | Качество данных. |
-| `rule_state` | Состояние по правилам. |
-| `rule_recommendation` | Рекомендация по правилам. |
-| `rule_reason` | Текстовое основание правила. |
-| `state_obs` | Состояние из симулятора. |
-| `rul_oracle_h` | Истинный RUL. |
-
-### 7.2. Правила состояния
-
-```text
-если delta_p_norm_kpa отсутствует:
-    rule_state = unknown
-
-если delta_p_norm_kpa < dp_warn_kpa:
-    rule_state = normal
-
-если dp_warn_kpa <= delta_p_norm_kpa < dp_crit_kpa:
-    rule_state = warning
-
-если delta_p_norm_kpa >= dp_crit_kpa:
-    rule_state = critical
-
-если quality_code == missing:
-    rule_state = unknown
-```
-
-### 7.3. Правила рекомендации
-
-```text
-по умолчанию:
-    rule_recommendation = continue_monitoring
-
-если rul_analytic_h < planned_maintenance_rul_h:
-    rule_recommendation = planned_maintenance
-
-если rul_analytic_h < urgent_maintenance_rul_h:
-    rule_recommendation = urgent_maintenance
-
-если rule_state == critical:
-    rule_recommendation = urgent_maintenance
-
-если rule_state == unknown:
-    rule_recommendation = inspect_sensor_data
-```
-
-## 8. RUL: oracle, analytic и ML
+## 7. RUL: oracle, analytic и ML
 
 В системе есть три разных RUL-поля.
 
@@ -931,11 +855,9 @@ ml_baseline/ml_baseline_report.md
 3. Количество строк с проблемами качества.
 4. Список созданных файлов.
 5. Список созданных признаков.
-6. Список файлов rule-based baseline.
-7. Список файлов ML baseline.
-8. Список файлов гибридного RUL fusion.
-9. Список графиков.
-10. UI-таблицы событий обслуживания.
+6. Список файлов ML baseline.
+7. Список файлов гибридного RUL fusion.
+8. UI-таблицы событий обслуживания.
 
 Подробное устройство рекомендательного слоя описано отдельно в `docs/recommendation_engine.md`.
 
@@ -952,7 +874,7 @@ ml_baseline/ml_baseline_report.md
 6. Считаем состояния и RUL.
 7. Фиксируем датасет.
 8. Строим признаки.
-9. Обучаем rule-based baseline и RandomForest ML baseline.
+9. Выполняем ML-прогноз RUL.
 10. Передаём ML-прогноз в гибридный RUL fusion.
 11. Получаем итоговый RUL, доверие и диагностические графики.
 ```

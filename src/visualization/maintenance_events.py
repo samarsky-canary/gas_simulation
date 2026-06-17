@@ -49,13 +49,19 @@ def _stable_threshold_event_time(
     threshold_h: float,
     stable_h: float,
 ) -> pd.Timestamp | None:
-    """Возвращает время, когда RUL устойчиво ниже threshold + stable_h заданное число часов."""
+    """Возвращает время, когда часовой средний RUL устойчиво ниже threshold + stable_h."""
     if rul_column not in decisions.columns or decisions.empty:
         return None
 
     data = decisions[["timestamp", rul_column]].copy()
     data["timestamp"] = pd.to_datetime(data["timestamp"])
-    data = data.sort_values("timestamp")
+    data = (
+        data.sort_values("timestamp")
+        .set_index("timestamp")[[rul_column]]
+        .resample("1h")
+        .mean()
+        .reset_index()
+    )
     detection_threshold = float(threshold_h) + float(stable_h)
 
     window_start: pd.Timestamp | None = None

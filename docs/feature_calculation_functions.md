@@ -34,7 +34,7 @@ window_steps(hours) = max(int(hours * 60 / step_minutes), 1)
 
 ## 2. Признаки Feature Builder
 
-Эти признаки экспортируются в `features.csv` и используются в ML baseline, rule layer и гибридной логике.
+Эти признаки экспортируются в `features.parquet` и используются в ML baseline, гибридной логике и графиках.
 
 ### 2.1. `deltaP_norm_kPa`
 
@@ -56,7 +56,6 @@ deltaP_norm_kPa = delta_p_kpa / flow_factor
 Используется:
 
 - как вход ML-модели;
-- в rule-based baseline;
 - в графиках;
 - как основной диагностический признак деградации.
 

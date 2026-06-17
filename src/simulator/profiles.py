@@ -22,7 +22,6 @@ def generate_profiles(
     n = len(idx)
     k = np.arange(n)
     steps_per_day = max(int(24 * 60 / cfg.step_minutes), 1)
-    steps_per_week = max(7 * steps_per_day, 1)
 
     # Базовый расход задается суточной
     q_base = cfg.q_nominal_m3h * (
