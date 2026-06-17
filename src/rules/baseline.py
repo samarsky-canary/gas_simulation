@@ -21,7 +21,6 @@ RULE_COLUMNS = [
     "rule_recommendation",
     "rule_reason",
     "state_obs",
-    "state_true",
     "rul_oracle_h",
 ]
 

@@ -13,7 +13,6 @@ def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     obs_dp_norm = _observed_delta_p_norm(cfg, out)
 
     out["delta_p_norm_q2"] = obs_dp_norm
-    out["state_true"] = _states(true_dp_norm, cfg)
     out["state_obs"] = _states(obs_dp_norm, cfg)
     out.loc[out["quality_code"] != "good", "state_obs"] = "unknown"
     out["rul_oracle_h"] = _rul_oracle(true_dp_norm, cfg)

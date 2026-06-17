@@ -290,35 +290,10 @@ true_delta_p_norm =
 
 Используется:
 
-- для `state_true`;
 - для `rul_oracle_h`.
 
 В реальные данные это поле напрямую не попадает как наблюдаемый признак, потому что использует hidden/true значения.
 
-### 3.3. `state_true`
-
-Функция расчета:
-
-```python
-if true_delta_p_norm is NaN:
-    state_true = unknown
-elif true_delta_p_norm < dp_warn_kpa:
-    state_true = normal
-elif true_delta_p_norm < dp_crit_kpa:
-    state_true = warning
-else:
-    state_true = critical
-```
-
-Смысл:
-
-```text
-Истинное состояние фильтра по clean-траектории.
-```
-
-Используется:
-
-- как скрытая истина для проверки качества;
 - в `truth_labels.csv`;
 - для анализа расхождения наблюдаемого и истинного состояния.
 
@@ -506,7 +481,6 @@ time_above_warn
 clog_level
 RUL_oracle_h
 state
-state_true
 rul_oracle_h
 ```
 

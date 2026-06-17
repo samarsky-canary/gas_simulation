@@ -30,7 +30,6 @@ FEATURE_EXPORT_COLUMNS = [
     "scenario_id",
     *FEATURE_COLUMNS,
     "state_obs",
-    "state_true",
     "rul_oracle_h",
     "rul_analytic_h",
     "is_rul_unknown",

@@ -22,14 +22,18 @@ def _base_df() -> pd.DataFrame:
             "rul_analytic_h": [100.0, 70.0, 11.0, 50.0, 100.0],
             "quality_code": ["good", "good", "good", "good", "missing"],
             "state_obs": ["normal", "warning", "warning", "critical", "unknown"],
-            "state_true": ["normal", "warning", "warning", "critical", "unknown"],
             "rul_oracle_h": [100.0, 70.0, 11.0, 0.0, np.nan],
         }
     )
 
 
 def test_apply_rule_baseline_thresholds() -> None:
-    cfg = ScenarioConfig(dp_warn_kpa=5.0, dp_crit_kpa=10.0)
+    cfg = ScenarioConfig(
+        dp_warn_kpa=5.0,
+        dp_crit_kpa=10.0,
+        planned_maintenance_rul_h=80.0,
+        urgent_maintenance_rul_h=20.0,
+    )
 
     baseline = apply_rule_baseline(cfg, _base_df())
 

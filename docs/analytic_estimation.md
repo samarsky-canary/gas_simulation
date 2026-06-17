@@ -239,7 +239,7 @@ deltaP_kPa(t) / max((Q_m3h(t) / Q_nominal) ^ alpha_flow, 1e-3)
 
 В текущей упрощенной версии наблюдаемый `deltaP_norm_kPa` нормируется только по расходу. Температурная поправка для наблюдаемой нормировки не применяется.
 
-## 11. Состояние фильтра `state_true` и `state_obs`
+## 11. Состояние фильтра `state_obs`
 
 Реализация: `src/simulator/labels.py`, функция `_states(...)`.
 
@@ -264,8 +264,6 @@ unknown
 если deltaP_norm >= dp_crit_kpa:
     state = critical
 ```
-
-`state_true` считается по `true_delta_p_norm`.
 
 `state_obs` считается по наблюдаемому `deltaP_norm_kPa`.
 
@@ -435,7 +433,6 @@ RUL_analytic_h(t) = 0
 | `delta_p_true_kpa` | `physics.py` | `dp0_kpa * flow_factor * temp_factor * resistance_factor`. |
 | `p_out_true_mpa` | `physics.py` | `max(0, p_in_true_mpa - delta_p_true_kpa / 1000)`. |
 | `deltaP_norm_kPa` | `labels.py`, `exporters.py`, `features.py` | `deltaP_kPa / max((Q_m3h / Q_nominal)^alpha_flow, 1e-3)`. |
-| `state_true` | `labels.py` | Пороговая классификация `true_delta_p_norm`. |
 | `state_obs` | `labels.py` | Пороговая классификация наблюдаемого `deltaP_norm_kPa`, плохие данные -> `unknown`. |
 | `RUL_oracle_h` | `labels.py` | Время до будущего достижения `true_delta_p_norm >= dp_crit_kpa`. |
 | `c_crit` | `labels.py` | `clip((dp_crit / dp0 - 1) / k_c, 0, 1) ^ (1 / beta)`. |

@@ -394,7 +394,6 @@ random < p_stuck
 Функция `label_run(...)` добавляет:
 
 - `delta_p_norm_q2`;
-- `state_true`;
 - `state_obs`;
 - `rul_oracle_h`;
 - `rul_analytic_h`;
@@ -479,7 +478,6 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `delta_p_true_kpa` | physics | Истинный перепад. |
 | `resistance_factor` | physics | Коэффициент сопротивления фильтра. |
 | `clog_level` | degradation | Скрытый уровень засорения. |
-| `state_true` | labels | Истинное состояние по clean-перепаду. |
 | `rul_oracle_h` | labels | Истинный RUL до critical. |
 | `rul_analytic_h` | labels | Аналитический RUL. |
 | `is_rul_unknown` | labels | Нет critical в будущем горизонте, поэтому точный oracle-RUL неизвестен. |
@@ -579,7 +577,6 @@ feature_description.md
 | `missing_rate_1h` | Доля строк с пропусками за 1 час. |
 | `time_above_warn` | Накопленное время выше warning-порога. |
 | `state_obs` | Наблюдаемое состояние. |
-| `state_true` | Истинное состояние. |
 | `rul_oracle_h` | Истинный RUL. |
 | `rul_analytic_h` | Аналитический RUL. |
 | `is_rul_unknown` | Флаг неизвестного oracle-RUL. |
@@ -692,7 +689,6 @@ rule_baseline_description.md
 | `rule_recommendation` | Рекомендация по правилам. |
 | `rule_reason` | Текстовое основание правила. |
 | `state_obs` | Состояние из симулятора. |
-| `state_true` | Истинное состояние. |
 | `rul_oracle_h` | Истинный RUL. |
 
 ### 7.2. Правила состояния
