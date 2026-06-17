@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -8,7 +9,14 @@ import streamlit as st
 
 from main import run_pipeline
 from src.simulator.config import SCENARIO_OVERRIDES, load_config, load_config_with_overrides
-from src.visualization import build_interactive_plot
+from src.visualization import (
+    build_current_run_quality_figure,
+    build_interactive_plot,
+    build_maintenance_event_table,
+    build_training_scenario_figure,
+    current_run_quality,
+    training_quality_summary,
+)
 
 
 BASE_CONFIG_PATH = Path("configs/base.yaml")
@@ -31,7 +39,6 @@ SCENARIO_LABELS = {
     "sensor_bias": "Дрейф показаний датчика",
     "sensor_stuck": "Залипание датчика",
     "missing_data": "Пропуски данных",
-    "maintenance_reset": "Обслуживание со сбросом засорения",
 }
 SCENARIO_CODES = {label: code for code, label in SCENARIO_LABELS.items()}
 
@@ -42,15 +49,27 @@ def _read_parquet(path: str) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
+@st.cache_data(show_spinner=False)
+def _read_json(path: str) -> dict[str, object]:
+    """Кэширует метрики использованной версии ML-модели."""
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _metric_value(value: float | None, suffix: str = "") -> str:
+    if value is None:
+        return "н/д"
+    return f"{value:,.1f}{suffix}".replace(",", " ")
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="Симуляция газового фильтра",
+        page_title="Расчёт ресурса газового фильтра",
         layout="wide",
     )
 
     base_cfg = load_config(BASE_CONFIG_PATH)
 
-    st.title("Симуляция газового фильтра")
+    st.title("Расчёт ресурса газового фильтра")
 
     with st.sidebar:
         st.header("Параметры запуска")
@@ -92,6 +111,32 @@ def main() -> None:
                 step=0.00001,
                 format="%.8f",
             )
+            st.subheader("Пороги обслуживания")
+            planned_maintenance_rul_h = st.number_input(
+                "Плановое обслуживание при остаточном ресурсе, ч",
+                min_value=1.0,
+                value=float(base_cfg.planned_maintenance_rul_h),
+                step=24.0,
+                format="%.1f",
+            )
+            urgent_maintenance_rul_h = st.number_input(
+                "Срочное обслуживание при остаточном ресурсе, ч",
+                min_value=1.0,
+                value=float(base_cfg.urgent_maintenance_rul_h),
+                step=24.0,
+                format="%.1f",
+            )
+            stable_degraded_rul_h = st.number_input(
+                "Устойчивое состояние в течение N часов",
+                min_value=1.0,
+                value=float(base_cfg.stable_degraded_rul_h),
+                step=1.0,
+                format="%.1f",
+                help=(
+                    "Событие фиксируется, если RUL устойчиво ниже "
+                    "`порог + N часов` в течение N часов."
+                ),
+            )
             p_missing_percent = st.number_input(
                 "Вероятность пропуска по каждому датчику, %",
                 min_value=0.0,
@@ -126,6 +171,9 @@ def main() -> None:
             "duration_days": int(duration_days),
             "step_minutes": int(step_minutes),
             "k_s_per_hour": float(k_s_per_hour),
+            "planned_maintenance_rul_h": float(planned_maintenance_rul_h),
+            "urgent_maintenance_rul_h": float(urgent_maintenance_rul_h),
+            "stable_degraded_rul_h": float(stable_degraded_rul_h),
             "p_missing": float(p_missing_percent) / 100.0,
             "p_spike": float(p_spike_percent) / 100.0,
         }
@@ -138,7 +186,7 @@ def main() -> None:
 
     result = st.session_state.get("pipeline_result")
     if result is None:
-        st.info("Задайте параметры слева и запустите симуляцию.")
+        st.info("Задайте конфигурацию фильтра и запустите симуляцию.")
         return
 
     col_rows, col_quality, col_output = st.columns([1, 1, 2])
@@ -147,34 +195,89 @@ def main() -> None:
     col_output.write("Каталог результатов")
     col_output.code(str(result.output_dir), language="text")
 
-    graph_label = st.radio(
-        "График",
-        list(GRAPH_CHOICES),
-        horizontal=True,
-    )
-    plot_key = GRAPH_CHOICES[graph_label]
     telemetry = _read_parquet(str(result.export_paths["wide_debug_parquet"]))
     hybrid_decisions = _read_parquet(
         str(result.hybrid_paths["hybrid_decisions_parquet"])
     )
-    figure = build_interactive_plot(
-        plot_key,
-        result.cfg,
-        telemetry,
-        hybrid_decisions,
-    )
-    st.plotly_chart(
-        figure,
-        use_container_width=True,
-        config={
-            "displaylogo": False,
-            "scrollZoom": True,
-            "responsive": True,
-        },
-    )
+    plot_config = {
+        "displaylogo": False,
+        "scrollZoom": True,
+        "responsive": True,
+    }
+    charts_tab, quality_tab = st.tabs(["Графики", "Качество ML"])
 
-    with st.expander("Сводка решений"):
-        st.text(result.decision_summary)
+    with charts_tab:
+        graph_label = st.radio(
+            "График",
+            list(GRAPH_CHOICES),
+            horizontal=True,
+        )
+        plot_key = GRAPH_CHOICES[graph_label]
+        figure = build_interactive_plot(
+            plot_key,
+            result.cfg,
+            telemetry,
+            hybrid_decisions,
+        )
+        st.plotly_chart(
+            figure,
+            use_container_width=True,
+            config=plot_config,
+        )
+        st.subheader("События обслуживания")
+        st.dataframe(
+            build_maintenance_event_table(result.cfg, hybrid_decisions),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with quality_tab:
+        metrics = _read_json(str(result.ml_paths["ml_metrics_json"]))
+        training = training_quality_summary(metrics)
+
+        st.subheader("Качество модели на отложенных test-прогонах")
+        test_columns = st.columns(4)
+        test_columns[0].metric(
+            "ML MAE", _metric_value(training["ml_mae_h"], " ч")
+        )
+        test_columns[1].metric(
+            "Аналитика MAE",
+            _metric_value(training["analytic_mae_h"], " ч"),
+        )
+        test_columns[2].metric(
+            "Улучшение ML",
+            _metric_value(training["improvement_percent"], "%"),
+        )
+        test_columns[3].metric("ML R²", _metric_value(training["ml_r2"]))
+        st.plotly_chart(
+            build_training_scenario_figure(metrics),
+            use_container_width=True,
+            config=plot_config,
+        )
+
+        st.subheader("Ошибка на текущем прогоне")
+        current = current_run_quality(hybrid_decisions)
+        current_columns = st.columns(3)
+        current_columns[0].metric(
+            "ML MAE", _metric_value(current["ml_mae_h"], " ч")
+        )
+        current_columns[1].metric(
+            "Аналитика MAE",
+            _metric_value(current["analytic_mae_h"], " ч"),
+        )
+        current_columns[2].metric(
+            "Гибрид MAE",
+            _metric_value(current["hybrid_mae_h"], " ч"),
+        )
+        st.plotly_chart(
+            build_current_run_quality_figure(result.cfg, hybrid_decisions),
+            use_container_width=True,
+            config=plot_config,
+        )
+        st.caption(
+            "Ошибка текущего прогона использует скрытый Oracle RUL симулятора. "
+            "Она доступна только для демонстрации и не является test-метрикой модели."
+        )
 
 
 if __name__ == "__main__":

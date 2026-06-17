@@ -10,7 +10,7 @@ configs/base.yaml
 -> rule-based baseline
 -> RandomForest ML baseline
 -> reasoner / recommendation engine
--> графики и консольная сводка
+-> графики и таблицы UI
 ```
 
 Отдельный слой, который читает ML-результат и выдаёт рекомендации, описан в файле `docs/recommendation_engine.md`.
@@ -70,7 +70,6 @@ rows = duration_days * 24 * 60 / step_minutes
 | `q_min_m3h` | Нижняя граница расхода. |
 | `q_max_m3h` | Верхняя граница расхода. |
 | `a_q` | Амплитуда суточной сезонности расхода. |
-| `q_weekly_amp` | Амплитуда недельной сезонности расхода. |
 | `q_ar_rho` | Коэффициент корреляции AR(1)-шума расхода. |
 | `q_process_std_m3h` | Масштаб случайных режимных колебаний расхода. |
 
@@ -165,7 +164,6 @@ flow_spikes
 sensor_bias
 sensor_stuck
 missing_data
-maintenance_reset
 ```
 
 В `src/simulator/config.py` есть `SCENARIO_OVERRIDES`. Это встроенные переопределения параметров:
@@ -179,7 +177,6 @@ maintenance_reset
 | `sensor_bias` | Включён дрейф давления. |
 | `sensor_stuck` | Увеличена вероятность залипания датчиков. |
 | `missing_data` | Увеличена вероятность пропусков. |
-| `maintenance_reset` | Добавлено обслуживание в середине ряда и сброс засорения. |
 
 ## 4. Как работает симулятор
 
@@ -226,7 +223,6 @@ freq = step_minutes
 ```text
 Q_base(t) = Q_nominal * (1
   + a_q * sin(2*pi*k/steps_per_day)
-  + q_weekly_amp * sin(2*pi*k/steps_per_week))
 
 Q_true(t) = Q_base(t) + AR(1)-noise
 ```
@@ -257,8 +253,7 @@ T_true(t) = T_nominal
 
 Функция `simulate_degradation(...)` создаёт:
 
-- `clog_level`;
-- `maintenance_event`.
+- `clog_level`.
 
 Формула шага:
 
@@ -273,21 +268,7 @@ clog(t+1) = clip(
 )
 ```
 
-Здесь `load(t)` уже включает степень `gamma_load`.
-
-Событие обслуживания может появиться двумя способами:
-
-- `maintenance_day` задаёт разовое обслуживание в конкретный день от начала симуляции;
-- `maintenance_interval_h` задаёт обслуживание по графику каждые N часов.
-
-Если обслуживание наступило, то в соответствующей точке:
-
-```text
-clog(t) = min(c_reset, clog(t-1))
-maintenance_event = true
-```
-
-Например, если `maintenance_interval_h = 20000`, событие будет создано через 20000 часов. Если длительность симуляции меньше 20000 часов, `maintenance_event` не появится.
+Здесь `load(t)` уже включает степень `gamma_load`. В текущей версии симулятора сброс засорения обслуживанием не моделируется, поэтому `clog_level` монотонно растет внутри одного прогона.
 
 ### 4.4. Физическая модель перепада давления
 
@@ -393,7 +374,7 @@ random < p_stuck
 - не нарушен ли порядок давлений;
 - не отрицателен ли перепад;
 - не отрицателен ли расход;
-- монотонно ли растёт `clog_level` между обслуживаниями.
+- монотонно ли растёт `clog_level`.
 
 Формируются:
 
@@ -502,7 +483,6 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `delta_p_true_kpa` | physics | Истинный перепад. |
 | `resistance_factor` | physics | Коэффициент сопротивления фильтра. |
 | `clog_level` | degradation | Скрытый уровень засорения. |
-| `maintenance_event` | degradation | Событие обслуживания. |
 | `state_true` | labels | Истинное состояние по clean-перепаду. |
 | `rul_oracle_h` | labels | Истинный RUL до critical. |
 | `rul_analytic_h` | labels | Аналитический RUL. |
@@ -681,7 +661,7 @@ above_warn = delta_p_kpa >= dp_warn_kpa
 time_above_warn = cumulative_sum(above_warn) * dt_h
 ```
 
-Сброс происходит после `maintenance_event`.
+Сброс в этом признаке не применяется: накопление идет от начала прогона.
 
 ## 7. Rule-Based Baseline
 
@@ -875,7 +855,7 @@ train = основные сценарии с train-seed
 test = основные сценарии с другими seed + stress-test сценарии
 ```
 
-В текущей конфигурации train строится по сценариям `slow_clogging`, `rapid_clogging`, `flow_spikes`, `maintenance_reset` с seed `7`, `13`, `21`. Test строится по тем же основным сценариям с seed `42`, `101`, а также по стресс-сценариям `sensor_bias`, `sensor_stuck`, `missing_data` с seed `42`.
+В текущей конфигурации train строится по сценариям `slow_clogging`, `rapid_clogging`, `flow_spikes` с seed `7`, `13`, `21`. Test строится по тем же основным сценариям с seed `42`, `101`, а также по стресс-сценариям `sensor_bias`, `sensor_stuck`, `missing_data` с seed `42`.
 
 Это нужно, чтобы модель видела полный диапазон RUL на обучающих траекториях и проверялась на независимых траекториях, а не на соседних точках того же ряда. Если в данных только один `run_id`, код использует временной split как fallback.
 
@@ -975,15 +955,15 @@ build_plots(cfg, df, output_dir, hybrid_decisions)
 7. Список файлов ML baseline.
 8. Список файлов гибридных решений.
 9. Список графиков.
-10. Краткую сводку рекомендательного слоя.
+10. UI-таблицы и машинно-читаемый журнал решений.
 
-Сводка рекомендательного слоя включает:
+Журнал решений сохраняется в `hybrid/decision_packages.jsonl` и содержит:
 
-- число временных точек;
-- распределение действий;
-- распределение источников RUL;
-- среднее и минимальное `confidence_total`;
-- несколько кратких карточек решений.
+- временную точку и фильтр;
+- состояние и качество данных;
+- ML, аналитический и итоговый RUL;
+- доверие, действие, приоритет и rule trace;
+- ключевые признаки и практические рекомендации.
 
 Подробное устройство рекомендательного слоя описано отдельно в `docs/recommendation_engine.md`.
 

@@ -33,7 +33,6 @@ ML_INPUT_COLUMNS = [
     "missing_rate_1h",
     "time_above_warn",
     "elapsed_hours",
-    "hours_since_maintenance",
     "cumulative_load_h",
 ]
 
@@ -226,7 +225,6 @@ def _prepare_dataset(dataset: pd.DataFrame) -> pd.DataFrame:
         "missing_rate_1h",
         "time_above_warn",
         "elapsed_hours",
-        "hours_since_maintenance",
         "cumulative_load_h",
     ]
     data[zero_at_start] = data[zero_at_start].fillna(0.0)
@@ -252,7 +250,6 @@ def _attach_features(dataset: pd.DataFrame, features: pd.DataFrame | None) -> pd
         "missing_rate_1h",
         "time_above_warn",
         "elapsed_hours",
-        "hours_since_maintenance",
         "cumulative_load_h",
     ]
     merge_keys = ["timestamp"]

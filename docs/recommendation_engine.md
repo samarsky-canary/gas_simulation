@@ -70,10 +70,8 @@ RUL_pred_h -> RUL_ml_h
 ```text
 hybrid/hybrid_decisions.csv
 hybrid/hybrid_decisions.parquet
-hybrid/hybrid_decisions_ru.csv
 hybrid/hybrid_decision_logic.md
 hybrid/decision_packages.jsonl
-hybrid/decision_cards.md
 ```
 
 Основная таблица содержит колонки:
@@ -443,13 +441,9 @@ R-FUSE-002;R-SAFE-001;R-EXPL-001
 2. Затем сработало safety-правило critical-состояния.
 3. Было сформировано объяснение.
 
-## 16. Консольная сводка
+## 16. Вывод результатов
 
-В конце `main.py` вызывает:
-
-```python
-format_console_decision_summary(hybrid_decisions)
-```
+`main.py` печатает список созданных файлов, а UI показывает интерактивные графики и таблицу событий обслуживания.
 
 Сводка содержит:
 

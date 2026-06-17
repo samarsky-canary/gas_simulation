@@ -18,7 +18,7 @@
 -> RUL_fused_h
 -> rule engine
 -> action + priority + due_time_h + explanation
--> графики и карточки решений
+-> графики и JSONL-пакеты решений
 ```
 
 ## Что проверено методически
@@ -43,7 +43,7 @@
 - Rule-based baseline.
 - RandomForestRegressor для `RUL_oracle_h`.
 - Гибридный decision layer.
-- Пакеты объяснения решений и Markdown-карточки.
+- Пакеты объяснения решений.
 - Диагностические графики.
 
 ## Текущий смысл гибридной модели

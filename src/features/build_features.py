@@ -20,7 +20,6 @@ FEATURE_COLUMNS = [
     "missing_rate_1h",
     "time_above_warn",
     "elapsed_hours",
-    "hours_since_maintenance",
     "cumulative_load_h",
 ]
 
@@ -94,8 +93,8 @@ FEATURE_DESCRIPTIONS = [
     },
     {
         "name": "time_above_warn",
-        "meaning": "Накопленное время выше warning-порога с начала участка после обслуживания.",
-        "formula": "cumulative_sum(deltaP_kPa >= deltaP_warn) * step_hours, reset on maintenance",
+        "meaning": "Накопленное время выше warning-порога с начала прогона.",
+        "formula": "cumulative_sum(deltaP_kPa >= deltaP_warn) * step_hours",
         "use": "Интерпретация правил и накопленной нагрузки в тревожной зоне.",
     },
     {
@@ -103,12 +102,6 @@ FEATURE_DESCRIPTIONS = [
         "meaning": "Время от начала текущего прогона.",
         "formula": "row_index * step_hours",
         "use": "Возраст наблюдаемой траектории без использования будущих данных.",
-    },
-    {
-        "name": "hours_since_maintenance",
-        "meaning": "Время после последнего обслуживания.",
-        "formula": "cumulative hours with reset on maintenance_event",
-        "use": "Возраст текущего цикла эксплуатации фильтра.",
     },
     {
         "name": "cumulative_load_h",
@@ -160,16 +153,14 @@ def build_features(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     )
     features["missing_rate_1h"] = missing_row.rolling(one_hour, min_periods=1).mean()
 
-    # Накопленное время выше warning сбрасывается после обслуживания фильтра.
+    # Накопленное время выше warning считается от начала прогона.
     above_warn = features["delta_p_kpa"].ge(cfg.dp_warn_kpa).fillna(False)
-    segment = features["maintenance_event"].fillna(False).astype(bool).cumsum()
-    features["time_above_warn"] = above_warn.groupby(segment).cumsum() * dt_h
+    features["time_above_warn"] = above_warn.cumsum() * dt_h
     features["elapsed_hours"] = np.arange(len(features), dtype=float) * dt_h
-    features["hours_since_maintenance"] = features.groupby(segment).cumcount() * dt_h
     normalized_load = (
         features["q_m3h"].ffill().bfill().clip(lower=0.0) / cfg.q_nominal_m3h
     )
-    features["cumulative_load_h"] = normalized_load.groupby(segment).cumsum() * dt_h
+    features["cumulative_load_h"] = normalized_load.cumsum() * dt_h
 
     return features[FEATURE_EXPORT_COLUMNS]
 

@@ -22,58 +22,22 @@ def simulate_degradation(cfg: ScenarioConfig, profile: pd.DataFrame) -> pd.DataF
     нелинейность влияния расхода: при ``1.0`` влияние линейное, при значениях выше
     ``1.0`` повышенный расход сильнее ускоряет деградацию.
 
-    Если в конфигурации задан ``cfg.maintenance_day``, на соответствующем шаге
-    выполняется разовое обслуживание. Если задан ``cfg.maintenance_interval_h``,
-    обслуживание выполняется по графику каждые N часов. В обоих случаях
-    ``clog_level`` сбрасывается до ``cfg.c_reset``, но не увеличивается относительно
-    предыдущего значения.
-
     Args:
         cfg: Конфигурация сценария. Используются параметры ``step_minutes``,
-            ``c0``, ``maintenance_day``, ``maintenance_interval_h``, ``c_reset``,
-            ``q_nominal_m3h``, ``gamma_load`` и ``k_s_per_hour``.
+            ``c0``, ``q_nominal_m3h``, ``gamma_load`` и ``k_s_per_hour``.
         profile: Таблица режимов работы с колонкой ``q_true_m3h``. Длина таблицы
             задает длину траектории деградации.
 
     Returns:
-        Таблица с двумя колонками:
-        ``clog_level`` — скрытый уровень засорения в диапазоне ``[0, 1]``;
-        ``maintenance_event`` — булев флаг обслуживания на текущем шаге.
+        Таблица с колонкой ``clog_level`` — скрытый уровень засорения в диапазоне ``[0, 1]``.
     """
     q = profile["q_true_m3h"].to_numpy()  # Берем истинный расход из профиля и переводим в массив NumPy.
     n = len(q)  # Запоминаем количество временных точек в симуляции.
     dt_h = cfg.step_minutes / 60.0  # Переводим шаг дискретизации из минут в часы.
     clog = np.empty(n)  # Создаем массив под скрытый уровень засорения на каждом шаге.
-    maintenance = np.zeros(n, dtype=bool)  # Создаем булев массив флагов обслуживания, изначально везде False.
     clog[0] = cfg.c0  # Задаем начальное засорение фильтра из конфигурации.
 
-    maintenance_idx = None  # По умолчанию считаем, что обслуживание в сценарии не задано.
-    if cfg.maintenance_day is not None:  # Проверяем, задан ли день обслуживания в конфигурации.
-        maintenance_idx = int(  # Переводим день обслуживания в номер шага временной сетки.
-            cfg.maintenance_day * 24 * 60 / cfg.step_minutes
-        )
-        maintenance_idx = min(max(maintenance_idx, 1), n - 1)  # Ограничиваем индекс допустимым диапазоном.
-    next_scheduled_maintenance_h = cfg.maintenance_interval_h  # Запоминаем ближайший срок обслуживания по графику в часах.
-
     for i in range(1, n):  # Идем по всем шагам, начиная со второго, потому что первый уже инициализирован.
-        elapsed_h = i * dt_h  # Считаем, сколько часов прошло от начала симуляции к текущему шагу.
-        is_one_time_maintenance = maintenance_idx is not None and i == maintenance_idx  # Проверяем разовое обслуживание.
-        is_scheduled_maintenance = (  # Проверяем, наступило ли обслуживание по графику.
-            next_scheduled_maintenance_h is not None
-            and elapsed_h + 1e-12 >= next_scheduled_maintenance_h
-        )
-        if is_one_time_maintenance or is_scheduled_maintenance:  # Если наступило любое обслуживание, сбрасываем засорение.
-            clog[i] = min(  # Сбрасываем засорение после обслуживания до остаточного уровня.
-                cfg.c_reset,
-                clog[i - 1],
-            )
-            maintenance[i] = True  # Отмечаем, что на этом шаге было обслуживание.
-            while (  # Переносим следующий срок графика вперед, если график включен.
-                next_scheduled_maintenance_h is not None
-                and elapsed_h + 1e-12 >= next_scheduled_maintenance_h
-            ):
-                next_scheduled_maintenance_h += cfg.maintenance_interval_h
-            continue  # Переходим к следующему шагу без обычного прироста засорения.
         load = (  # Считаем нагрузку по расходу за прошедший интервал.
             max(q[i - 1], 0.0) / cfg.q_nominal_m3h
         ) ** cfg.gamma_load
@@ -83,6 +47,4 @@ def simulate_degradation(cfg: ScenarioConfig, profile: pd.DataFrame) -> pd.DataF
             1.0,
         )
 
-    return pd.DataFrame(  # Возвращаем результат как таблицу, совместимую с остальным пайплайном.
-        {"clog_level": clog, "maintenance_event": maintenance}
-    )
+    return pd.DataFrame({"clog_level": clog})

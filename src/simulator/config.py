@@ -16,7 +16,6 @@ ScenarioName = Literal[
     "sensor_bias",
     "sensor_stuck",
     "missing_data",
-    "maintenance_reset",
 ]
 
 
@@ -36,7 +35,6 @@ class ScenarioConfig(BaseModel):
     q_min_m3h: float = Field(default=150.0, ge=0)                                   # Нижняя граница допустимого истинного расхода, м3/ч.
     q_max_m3h: float = Field(default=1200.0, gt=0)                                  # Верхняя граница допустимого истинного расхода, м3/ч.
     a_q: float = Field(default=0.12, ge=0)                                          # Амплитуда суточного колебания расхода относительно номинала.
-    q_weekly_amp: float = Field(default=0.05, ge=0)                                 # Амплитуда недельного колебания расхода относительно номинала.
     q_ar_rho: float = Field(default=0.65, ge=0, lt=1)                               # Коэффициент памяти AR(1)-шума расхода.
     q_process_std_m3h: float = Field(default=30.0, ge=0)                            # Стандартное отклонение плавного процессного шума расхода, м3/ч.
 
@@ -57,6 +55,7 @@ class ScenarioConfig(BaseModel):
     dp_crit_kpa: float = Field(default=10.0, gt=0)                                  # Критический порог по нормированному перепаду давления, кПа.
     planned_maintenance_rul_h: float = Field(default=1440.0, gt=0)                  # Горизонт планового обслуживания: 60 суток, часы.
     urgent_maintenance_rul_h: float = Field(default=336.0, gt=0)                    # Горизонт срочного обслуживания: 14 суток, часы.
+    stable_degraded_rul_h: float = Field(default=4.0, ge=1)                         # Минимальная длительность устойчивого снижения RUL для фиксации события, часы.
     c0: float = Field(default=0.05, ge=0, le=1)                                     # Начальный скрытый уровень засорения фильтра от 0 до 1.
     k_s_per_hour: float = Field(default=4e-4, ge=0)                                 # Базовая скорость роста засорения за час при номинальной нагрузке.
     alpha_flow: float = Field(default=2.0, gt=0)                                    # Степень влияния расхода на перепад давления.
@@ -75,10 +74,6 @@ class ScenarioConfig(BaseModel):
     bias_drift_mpa_per_day: float = Field(default=0.0, ge=0)                        # Скорость дрейфа смещения датчика давления, МПа в сутки.
     stuck_min_steps: int = Field(default=6, ge=1)                                   # Минимальная длительность зависания датчика в шагах.
     stuck_max_steps: int = Field(default=36, ge=1)                                  # Максимальная длительность зависания датчика в шагах.
-
-    maintenance_day: float | None = None                                            # День разового обслуживания от начала симуляции; None отключает разовое обслуживание.
-    maintenance_interval_h: float | None = Field(default=None, gt=0)                # Интервал планового обслуживания в часах; None отключает обслуживание по графику.
-    c_reset: float = Field(default=0.05, ge=0, le=1)                                # Остаточный уровень засорения после обслуживания от 0 до 1.
 
     schema_version: str = "0.1.0"                                                   # Версия схемы конфигурации и выходных метаданных.
     timezone_name: str = "Europe/Astrakhan"                                         # Название часового пояса для интерпретации временной сетки.
@@ -107,7 +102,6 @@ SCENARIO_OVERRIDES: dict[str, dict[str, Any]] = {
     "sensor_bias": {"bias_drift_mpa_per_day": 0.0008},
     "sensor_stuck": {"p_stuck": 0.004},
     "missing_data": {"p_missing": 0.035},
-    "maintenance_reset": {"maintenance_day": 45.0, "k_s_per_hour": 7e-4, "c_reset": 0.04},
 }
 
 

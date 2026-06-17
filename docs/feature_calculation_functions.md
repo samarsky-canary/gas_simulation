@@ -227,20 +227,13 @@ missing_rate_1h = 0.25
 
 ```python
 above_warn = delta_p_kpa >= dp_warn_kpa
-segment = cumulative_sum(maintenance_event)
-time_above_warn = cumulative_sum(above_warn внутри segment) * dt_h
-```
-
-Сброс:
-
-```text
-после maintenance_event начинается новый segment
+time_above_warn = cumulative_sum(above_warn) * dt_h
 ```
 
 Смысл:
 
 ```text
-Сколько часов фильтр провел выше warning-порога после последнего обслуживания.
+Сколько часов фильтр провел выше warning-порога от начала прогона.
 ```
 
 Важно: в текущем коде используется сырой `delta_p_kpa`, а не `deltaP_norm_kPa`.

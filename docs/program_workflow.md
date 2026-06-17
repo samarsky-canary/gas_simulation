@@ -33,7 +33,7 @@ outputs/slow_clogging/
 -> RandomForest ML baseline
 -> гибридные решения
 -> графики
--> консольная сводка и карточки решений
+-> UI-таблицы и JSONL-пакеты решений
 ```
 
 ## 3. Симуляция
@@ -155,10 +155,8 @@ ML-прогноз RUL записывается как `RUL_ml_h`.
 ```text
 hybrid/hybrid_decisions.csv
 hybrid/hybrid_decisions.parquet
-hybrid/hybrid_decisions_ru.csv
 hybrid/hybrid_decision_logic.md
 hybrid/decision_packages.jsonl
-hybrid/decision_cards.md
 ```
 
 ## 9. Как читать решение
@@ -181,15 +179,15 @@ hybrid/decision_cards.md
 
 `confidence_total` показывает общее доверие к решению. Низкое значение обычно ведет к fallback или ручной проверке.
 
-## 10. Карточки решений
+## 10. Пакеты объяснения решений
 
-В конце запуска программа печатает краткие карточки в консоль. Полный человекочитаемый файл:
+Полный машинно-читаемый журнал объяснений сохраняется в:
 
 ```text
-hybrid/decision_cards.md
+hybrid/decision_packages.jsonl
 ```
 
-Карточка показывает:
+Пакет показывает:
 
 - фильтр и время;
 - состояние;
@@ -221,7 +219,7 @@ plots/
 - `03_perepad_delta_p.png` - сырой перепад давления;
 - `04_zasorenie_clog_level.png` - скрытое засорение;
 - `05_ostatochnyi_resurs_rul.png` - остаточный ресурс;
-- `06_sostoyanie_filtra.png` - состояние фильтра и отметки карточек решений;
+- `06_sostoyanie_filtra.png` - состояние фильтра;
 - `07_normirovannyi_perepad.png` - нормированный перепад с warning/critical порогами;
 - `08_delta_p_i_zasorenie.png` - сравнение перепада и засорения.
 

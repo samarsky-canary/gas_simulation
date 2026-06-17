@@ -89,7 +89,7 @@ T_C
 - `deltaP_slope_6h` показывает тренд нормированного перепада за 6 часов;
 - `Q_roll_mean_1h` показывает средний режим расхода за час;
 - `missing_rate_1h` показывает долю проблемных строк за час;
-- `time_above_warn` показывает накопленное время выше warning-порога после последнего обслуживания.
+- `time_above_warn` показывает накопленное время выше warning-порога от начала прогона.
 
 ## 4. Что не подается на вход ML
 
@@ -143,7 +143,6 @@ Train-сценарии:
 slow_clogging
 rapid_clogging
 flow_spikes
-maintenance_reset
 ```
 
 Train seed:
@@ -158,7 +157,6 @@ Test-сценарии:
 slow_clogging
 rapid_clogging
 flow_spikes
-maintenance_reset
 ```
 
 Test seed:

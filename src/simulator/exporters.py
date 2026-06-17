@@ -41,7 +41,6 @@ TRUTH_COLUMNS = [
     "delta_p_true_kpa",
     "resistance_factor",
     "clog_level",
-    "maintenance_event",
     "state_true",
     "rul_oracle_h",
     "rul_analytic_h",

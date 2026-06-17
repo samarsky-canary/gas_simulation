@@ -34,7 +34,6 @@ ML здесь не участвует. Все величины считаютс�
 | `k_mu_per_c` | Температурный коэффициент поправки перепада. |
 | `k_s_per_hour` | Базовая скорость накопления засорения за час. |
 | `c0` | Начальный уровень засорения. |
-| `c_reset` | Уровень засорения после обслуживания. |
 
 ## 3. Засорение фильтра `clog_level`
 
@@ -68,22 +67,7 @@ clog(t+1) = clip(
 dt_h = step_minutes / 60
 ```
 
-Если наступает обслуживание:
-
-```text
-maintenance_event = true
-```
-
-то:
-
-```text
-clog(t) = min(c_reset, clog(t-1))
-```
-
-Обслуживание может быть:
-
-- разовым через `maintenance_day`;
-- периодическим через `maintenance_interval_h`.
+В текущей версии симулятора сброс засорения не моделируется: внутри одного прогона `clog_level` монотонно накапливается до верхней границы.
 
 ## 4. Коэффициент расхода `flow_factor`
 
@@ -482,7 +466,7 @@ clip(delta_p_norm_q2(t) / dp_crit_kpa, 0, 1)
 
 | Поле | Где считается | Формула / логика |
 |---|---|---|
-| `clog_level` | `degradation.py` | Накопление `k_s_per_hour * load * dt_h`, сброс при обслуживании. |
+| `clog_level` | `degradation.py` | Монотонное накопление `k_s_per_hour * load * dt_h`. |
 | `flow_factor` | `physics.py` | `(Q_true / Q_nominal) ^ alpha_flow`. |
 | `temp_factor` | `physics.py` | `exp(k_mu_per_c * (T_nominal - T_true))`. |
 | `resistance_factor` | `physics.py` | `1 + k_c * clog_level ^ beta`. |

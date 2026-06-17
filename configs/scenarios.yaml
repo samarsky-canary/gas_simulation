@@ -48,14 +48,3 @@ flow_spikes:
 
   # 30 дней достаточно для проверки влияния режимных скачков на перепад давления.
   duration_days: 30
-
-
-# Сценарий обслуживания или замены фильтра в середине ряда.
-# Нужен для будущих post-maintenance правил: сброс baseline, подавление тревог,
-# пересчет состояния после замены.
-maintenance_reset:
-  # В config.py для maintenance_reset задается maintenance_day и сброс clog_level.
-  scenario_name: maintenance_reset
-
-  # Длинный горизонт нужен, чтобы увидеть деградацию до и после обслуживания.
-  duration_days: 90

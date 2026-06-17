@@ -62,7 +62,6 @@ def export_hybrid_decisions(
         "hybrid_decisions_parquet": hybrid_dir / "hybrid_decisions.parquet",
         "hybrid_description": hybrid_dir / "hybrid_decision_logic.md",
         "hybrid_decision_packages_jsonl": hybrid_dir / "decision_packages.jsonl",
-        "hybrid_decision_cards_md": hybrid_dir / "decision_cards.md",
     }
     if export_csv:
         paths["hybrid_decisions_csv"] = hybrid_dir / "hybrid_decisions.csv"
@@ -70,38 +69,7 @@ def export_hybrid_decisions(
     decisions.to_parquet(paths["hybrid_decisions_parquet"], index=False)
     paths["hybrid_description"].write_text(_description(), encoding="utf-8")
     _write_decision_packages_jsonl(decisions, paths["hybrid_decision_packages_jsonl"])
-    paths["hybrid_decision_cards_md"].write_text(_decision_cards_markdown(decisions), encoding="utf-8")
     return paths
-
-
-def format_console_decision_summary(decisions: pd.DataFrame, max_cards: int = 3) -> str:
-    """Формирует краткий консольный отчет по гибридным решениям и карточкам."""
-    if decisions.empty:
-        return "Краткая сводка гибридных решений: нет данных."
-
-    action_counts = decisions["action"].value_counts().to_dict()
-    source_counts = decisions["rul_source"].value_counts().to_dict()
-    confidence_mean = decisions["confidence_total"].mean()
-    confidence_min = decisions["confidence_total"].min()
-
-    lines = [
-        "Краткая сводка гибридных решений:",
-        f"- Всего временных точек: {len(decisions)}",
-        f"- Действия: {_format_counts(action_counts)}",
-        f"- Источники RUL: {_format_counts(source_counts)}",
-        f"- Confidence total: среднее={confidence_mean:.3f}, минимум={confidence_min:.3f}",
-        "",
-        "Краткие карточки решений по источникам RUL:",
-    ]
-    for _, row in select_decision_card_rows(decisions).head(max_cards).iterrows():
-        package = _decision_package(row)
-        lines.extend(_console_card_lines(package))
-    return "\n".join(lines)
-
-
-def select_decision_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
-    """Возвращает строки, для которых формируются карточки объяснения решений."""
-    return _sample_card_rows(decisions)
 
 
 def _prepare_inputs(
@@ -424,93 +392,6 @@ def _write_decision_packages_jsonl(decisions: pd.DataFrame, path: Path) -> None:
             fh.write(json.dumps(package, ensure_ascii=False) + "\n")
 
 
-def _decision_cards_markdown(decisions: pd.DataFrame) -> str:
-    """Формирует читаемые карточки решений для последних и типовых событий."""
-    sample = select_decision_card_rows(decisions)
-    lines = [
-        "# Карточки объяснения решений",
-        "",
-        "Файл показывает человекочитаемый вид пакета объяснения. Полный машинно-читаемый журнал для каждой временной точки находится в `decision_packages.jsonl`.",
-        "",
-    ]
-    for _, row in sample.iterrows():
-        package = _decision_package(row)
-        lines.extend(_decision_card_lines(package))
-        lines.append("")
-    return "\n".join(lines)
-
-
-def _sample_card_rows(decisions: pd.DataFrame) -> pd.DataFrame:
-    """Выбирает карточки сначала по источникам RUL, затем по финалу и типам действий."""
-    indices: list[int] = []
-    for source in ["ml_baseline", "conservative_min", "analytic_fallback", "analytic_data_veto"]:
-        index = _representative_source_index(decisions, source)
-        if index is not None:
-            indices.append(index)
-
-    if len(decisions) > 0:
-        indices.append(int(decisions.index[-1]))
-
-    action_order = [
-        "sensor_check",
-        "shutdown_request",
-        "urgent_maintenance",
-        "planned_maintenance",
-        "manual_review",
-        "monitor",
-    ]
-    for action in action_order:
-        matches = decisions.index[decisions["action"].eq(action)]
-        if len(matches) > 0:
-            indices.append(int(matches[0]))
-    unique_indices = list(dict.fromkeys(indices))
-    return decisions.loc[unique_indices]
-
-
-def _representative_source_index(decisions: pd.DataFrame, source: str) -> int | None:
-    """Выбирает диагностически значимую строку для конкретного источника RUL."""
-    subset = decisions[decisions["rul_source"].eq(source)]
-    if subset.empty:
-        return None
-
-    if source == "ml_baseline":
-        # Для ML показываем не первую нормальную точку, а момент с минимальным ML/fused RUL.
-        return int(subset["RUL_fused_h"].idxmin())
-
-    if source == "conservative_min":
-        # Консервативный минимум интересен там, где он влияет на действие, а не просто monitor.
-        prioritized = subset[~subset["action"].eq("monitor")]
-        if prioritized.empty:
-            prioritized = subset
-        return int(prioritized["RUL_fused_h"].idxmin())
-
-    prioritized_actions = ["manual_review", "sensor_check", "urgent_maintenance", "planned_maintenance"]
-    prioritized = subset[subset["action"].isin(prioritized_actions)]
-    if prioritized.empty:
-        prioritized = subset
-    return int(prioritized["RUL_fused_h"].idxmin())
-
-
-def _console_card_lines(package: dict[str, object]) -> list[str]:
-    """Формирует компактную карточку решения для вывода в консоль."""
-    quality = package["quality"]
-    rul = package["rul"]
-    confidence = package["confidence"]
-    decision = package["decision"]
-    rule_trace = package["rule_trace"]
-    return [
-        "",
-        f"- Фильтр {package['filter_id']} | {package['timestamp']}",
-        f"  Состояние: {str(package['state']).upper()}, качество: {str(quality['quality_code']).upper()}",
-        f"  RUL: ML={_fmt_optional(rul['ml_baseline_h'])} ч, analytic={_fmt_optional(rul['analytic_h'])} ч, fused={_fmt_optional(rul['fused_h'])} ч, источник={rul['source']}",
-        f"  Confidence total: {_fmt_optional(confidence['total'])}",
-        f"  Действие: {decision['action']}, приоритет: {decision['priority']}, срок: {_format_due(decision['due_time_h'])}",
-        f"  Правила: {'; '.join(rule_trace)}",
-        f"  Объяснение: {package['explanation']}",
-        f"  Что делать: {'; '.join(package['what_to_do'])}",
-    ]
-
-
 def _decision_package(row: pd.Series) -> dict[str, object]:
     """Собирает структурированный пакет объяснения решения."""
     return {
@@ -545,45 +426,6 @@ def _decision_package(row: pd.Series) -> dict[str, object]:
     }
 
 
-def _decision_card_lines(package: dict[str, object]) -> list[str]:
-    """Преобразует пакет объяснения в markdown-карточку."""
-    quality = package["quality"]
-    rul = package["rul"]
-    confidence = package["confidence"]
-    decision = package["decision"]
-    key_features = package["key_features"]
-    rule_trace = package["rule_trace"]
-    what_to_do = package["what_to_do"]
-
-    lines = [
-        f"## Фильтр {package['filter_id']} | {package['timestamp']}",
-        "",
-        f"Состояние: `{str(package['state']).upper()}`",
-        f"Качество данных: `{str(quality['quality_code']).upper()}`",
-        "",
-        f"RUL ML baseline: `{_fmt_optional(rul['ml_baseline_h'])}` ч",
-        f"RUL analytic: `{_fmt_optional(rul['analytic_h'])}` ч",
-        f"RUL fused: `{_fmt_optional(rul['fused_h'])}` ч",
-        f"Источник RUL: `{rul['source']}`",
-        f"Confidence total: `{_fmt_optional(confidence['total'])}`",
-        "",
-        f"Действие: `{decision['action']}`",
-        f"Приоритет: `{decision['priority']}`",
-        f"Срок: `{_format_due(decision['due_time_h'])}`",
-        "",
-        "Почему:",
-    ]
-    lines.extend([f"- {item}" for item in _why_lines(package)])
-    lines.append(f"- Сработали правила: `{'; '.join(rule_trace)}`")
-    lines.append("")
-    lines.append("Ключевые признаки:")
-    lines.extend([f"- `{item['name']}` = `{_fmt_optional(item['value'])}`: {item['meaning']}" for item in key_features])
-    lines.append("")
-    lines.append("Что делать:")
-    lines.extend([f"- {item}" for item in what_to_do])
-    return lines
-
-
 def _key_features(row: pd.Series) -> list[dict[str, object]]:
     """Выбирает основные признаки, которые объясняют правило."""
     return [
@@ -615,26 +457,6 @@ def _key_features(row: pd.Series) -> list[dict[str, object]]:
     ]
 
 
-def _why_lines(package: dict[str, object]) -> list[str]:
-    """Формирует короткие причины решения на русском языке."""
-    rul = package["rul"]
-    confidence = package["confidence"]
-    decision = package["decision"]
-    key = {item["name"]: item["value"] for item in package["key_features"]}
-    lines = [
-        f"Состояние фильтра: `{package['state']}`.",
-        f"Итоговый RUL выбран из источника `{rul['source']}`.",
-        f"Общее доверие к решению: `{_fmt_optional(confidence['total'])}`.",
-    ]
-    if key.get("time_above_warn") is not None and float(key["time_above_warn"]) > 0:
-        lines.append(f"`deltaP_norm` находится выше warning-порога `{_fmt_optional(key['time_above_warn'])}` ч.")
-    if confidence.get("consistency") is not None:
-        lines.append(f"Согласованность ML и аналитического RUL: `{_fmt_optional(confidence['consistency'])}`.")
-    if decision["action"] in {"sensor_check", "manual_review"}:
-        lines.append("Правила ограничили прямое использование ML-прогноза.")
-    return lines
-
-
 def _what_to_do(row: pd.Series) -> list[str]:
     """Возвращает список практических действий для выбранного action."""
     action = str(row.get("action", ""))
@@ -661,11 +483,6 @@ def _rule_trace_list(value: object) -> list[str]:
     return [item for item in str(value).split(";") if item]
 
 
-def _format_counts(counts: dict[str, int]) -> str:
-    """Форматирует словарь счетчиков в одну строку."""
-    return ", ".join(f"{key}={value}" for key, value in counts.items())
-
-
 def _format_due(value: object) -> str:
     """Форматирует срок выполнения действия."""
     number = _number_or_none(value)
@@ -674,14 +491,6 @@ def _format_due(value: object) -> str:
     if number <= 0:
         return "немедленно"
     return f"в течение {number:.1f} ч"
-
-
-def _fmt_optional(value: object) -> str:
-    """Форматирует число или пустое значение для карточки."""
-    number = _number_or_none(value)
-    if number is None:
-        return "н/д"
-    return f"{number:.3f}"
 
 
 def _number_or_none(value: object) -> float | None:
@@ -747,7 +556,6 @@ def _description() -> str:
             "## Пакеты объяснения",
             "",
             "- `decision_packages.jsonl` - полный структурированный пакет объяснения для каждой временной точки.",
-            "- `decision_cards.md` - человекочитаемые карточки для последней точки и типовых действий.",
             "",
         ]
     )

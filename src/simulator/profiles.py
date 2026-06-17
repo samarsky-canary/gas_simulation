@@ -24,11 +24,10 @@ def generate_profiles(
     steps_per_day = max(int(24 * 60 / cfg.step_minutes), 1)
     steps_per_week = max(7 * steps_per_day, 1)
 
-    # Базовый расход задается суточной и недельной сезонностью.
+    # Базовый расход задается суточной
     q_base = cfg.q_nominal_m3h * (
         1
         + cfg.a_q * np.sin(2 * np.pi * k / steps_per_day)
-        + cfg.q_weekly_amp * np.sin(2 * np.pi * k / steps_per_week)
     )
     q = q_base + _ar1(n, cfg.q_ar_rho, cfg.q_process_std_m3h, rng)
 

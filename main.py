@@ -11,7 +11,6 @@ from src.features import build_features, export_features
 from src.hybrid import (
     build_hybrid_decisions,
     export_hybrid_decisions,
-    format_console_decision_summary,
 )
 from src.ml import predict_and_export_ml_baseline, train_ml_baseline
 from src.rules import apply_rule_baseline, export_rule_baseline
@@ -49,11 +48,10 @@ OUTPUT_LABELS = {
     "hybrid_decisions_parquet": "гибридные решения Parquet",
     "hybrid_description": "описание гибридной логики",
     "hybrid_decision_packages_jsonl": "пакеты объяснения решений JSONL",
-    "hybrid_decision_cards_md": "карточки объяснения решений Markdown",
 }
 
-ML_TRAIN_SCENARIOS = ("slow_clogging", "rapid_clogging", "flow_spikes", "maintenance_reset")
-ML_TEST_SCENARIOS = ("slow_clogging", "rapid_clogging", "flow_spikes", "maintenance_reset")
+ML_TRAIN_SCENARIOS = ("slow_clogging", "rapid_clogging", "flow_spikes")
+ML_TEST_SCENARIOS = ("slow_clogging", "rapid_clogging", "flow_spikes")
 ML_STRESS_TEST_SCENARIOS = ("sensor_bias", "sensor_stuck", "missing_data")
 ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
@@ -82,7 +80,6 @@ class PipelineResult:
     ml_paths: dict[str, Path]
     hybrid_paths: dict[str, Path]
     plot_paths: dict[str, Path]
-    decision_summary: str
 
 
 def run_pipeline(
@@ -129,7 +126,6 @@ def run_pipeline(
         ml_paths=ml_paths,
         hybrid_paths=hybrid_paths,
         plot_paths=plot_paths,
-        decision_summary=format_console_decision_summary(hybrid_decisions),
     )
 
 
@@ -214,8 +210,6 @@ def main() -> None:
     print("Созданные графики:")
     for path in result.plot_paths.values():
         print(f"- {path}")
-    print("")
-    print(result.decision_summary)
 
 
 def _build_ml_training_corpus(
@@ -373,7 +367,6 @@ def _randomized_ml_config(
             "step_minutes": step_minutes,
             "seed": corpus_seed_for_run(corpus_seed, ordinal),
             "a_q": float(rng.uniform(0.06, 0.25)),
-            "q_weekly_amp": float(rng.uniform(0.0, 0.12)),
             "q_process_std_m3h": float(rng.uniform(15.0, 90.0)),
             "p_in_nominal_mpa": p_nominal,
             "p_min_mpa": max(0.05, p_nominal * 0.2),
@@ -393,9 +386,6 @@ def _randomized_ml_config(
             * float(rng.uniform(0.7, 1.5)),
         }
     )
-    if scenario_name == "maintenance_reset":
-        raw["maintenance_day"] = float(rng.uniform(20.0, 60.0))
-        raw["c_reset"] = float(rng.uniform(0.01, 0.08))
     raw["duration_days"] = _training_duration_days(raw, rng)
     return ScenarioConfig.model_validate(raw)
 
@@ -413,14 +403,7 @@ def _training_duration_days(
     rate = max(float(raw["k_s_per_hour"]), 1e-9)
     critical_raw = max((dp_critical / dp0 - 1.0) / k_c, 0.0)
     critical_clog = min(critical_raw, 1.0) ** (1.0 / beta)
-    initial_hours = max(critical_clog - c0, 0.0) / rate
-
-    maintenance_day = raw.get("maintenance_day")
-    if maintenance_day is not None:
-        reset_hours = max(critical_clog - float(raw["c_reset"]), 0.0) / rate
-        required_hours = float(maintenance_day) * 24.0 + reset_hours
-    else:
-        required_hours = initial_hours
+    required_hours = max(critical_clog - c0, 0.0) / rate
     buffer = float(rng.uniform(1.15, 1.35))
     return max(60, min(365, int(np.ceil(required_hours * buffer / 24.0))))
 

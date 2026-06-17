@@ -38,10 +38,8 @@ def validate_run(cfg: ScenarioConfig, df: pd.DataFrame) -> tuple[pd.DataFrame, Q
     )
     quality_counter: Counter[str] = Counter(out["quality_code"])
 
-    clog = out["clog_level"].to_numpy()
-    maint = out["maintenance_event"].to_numpy(dtype=bool)
-    diffs = np.diff(clog)
-    monotonic = bool(np.all(diffs[~maint[1:]] >= -1e-9))
+    diffs = np.diff(out["clog_level"].to_numpy())
+    monotonic = bool(np.all(diffs >= -1e-9))
 
     report = QCReport(
         rows=len(out),

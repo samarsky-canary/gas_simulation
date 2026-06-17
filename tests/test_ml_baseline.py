@@ -164,5 +164,5 @@ def test_randomized_training_corpus_has_independent_runs() -> None:
     assert len(test_run_ids) == 2
     assert metadata["dataset_count"] == 8
     assert len(metadata["runs"]) == 8
-    assert dataset["scenario"].nunique() == 7
+    assert dataset["scenario"].nunique() == 6
     assert "normal" not in set(dataset["scenario"])
