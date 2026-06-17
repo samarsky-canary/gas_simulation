@@ -49,21 +49,26 @@ def _ml_predictions() -> pd.DataFrame:
     )
 
 
-def test_build_hybrid_decisions_actions() -> None:
+def test_build_hybrid_decisions_fuses_rul() -> None:
     cfg = ScenarioConfig(dp_warn_kpa=5.0, dp_crit_kpa=10.0)
 
     decisions = build_hybrid_decisions(cfg, _dataset(), _features(), _ml_predictions())
 
-    assert decisions["action"].tolist() == [
-        "monitor",
-        "planned_maintenance",
-        "urgent_maintenance",
-        "sensor_check",
-    ]
-    assert decisions["priority"].tolist() == ["P3", "P2", "P1", "P0"]
     assert decisions["RUL_fused_h"].notna().all()
     assert decisions["confidence_total"].between(0, 1).all()
-    assert decisions["rule_trace"].str.contains("R-").all()
+    assert decisions["rul_source"].tolist() == [
+        "ml_baseline",
+        "ml_baseline",
+        "ml_baseline",
+        "analytic_fallback",
+    ]
+    assert not {
+        "action",
+        "priority",
+        "due_time_h",
+        "rule_trace",
+        "explanation",
+    }.intersection(decisions.columns)
     assert {"deltaP_roll_mean_1h", "deltaP_slope_6h", "time_above_warn"}.issubset(decisions.columns)
 
 
@@ -75,5 +80,4 @@ def test_export_hybrid_decisions_creates_files(tmp_path) -> None:
 
     assert all(path.exists() and path.stat().st_size > 0 for path in paths.values())
     assert not any("_ru" in name for name in paths)
-    packages = paths["hybrid_decision_packages_jsonl"].read_text(encoding="utf-8")
-    assert '"rule_trace"' in packages
+    assert "hybrid_decision_packages_jsonl" not in paths

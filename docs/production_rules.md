@@ -323,7 +323,7 @@ confidence_total = clip(
 
 Эти правила формируют `RUL_fused_h` и `rul_source`.
 
-Правила проверяются сверху вниз. Первое подходящее правило выбирает итоговый `RUL_fused_h`, задает `rul_source` и добавляет код fusion-правила в `rule_trace`.
+Правила проверяются сверху вниз. Первое подходящее правило выбирает итоговый `RUL_fused_h` и задает `rul_source`.
 
 ### R-FUSE-000. RUL недоступен
 
@@ -356,8 +356,6 @@ RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_data_veto
 ```
 
-В `rule_trace` этот вариант записывается как `R-FUSE-003`.
-
 ### R-FUSE-003. Аналитический fallback при недоступном ML
 
 ЕСЛИ:
@@ -372,8 +370,6 @@ RUL_ml_h is NaN
 RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_fallback
 ```
-
-В `rule_trace` этот вариант записывается как `R-FUSE-003`.
 
 ### R-FUSE-001. Использование ML-прогноза
 
@@ -423,232 +419,28 @@ RUL_fused_h = first_available(RUL_analytic_h, RUL_ml_h)
 rul_source = analytic_fallback
 ```
 
-В `rule_trace` этот вариант записывается как `R-FUSE-003`.
+## 5. События Обслуживания В UI
 
-## 5. Продукционные Правила Действий
+Гибридный слой больше не назначает действия обслуживания. Он только рассчитывает `RUL_fused_h`, `rul_source` и доверия.
 
-Эти правила применяются сверху вниз. Первое сработавшее правило возвращает итоговые `action`, `priority`, `due_time_h` и `explanation`.
-
-### R-SAFE-002. Запрос на останов по низкому выходному давлению
-
-ЕСЛИ:
+Таблица событий обслуживания в UI рассчитывается отдельно по трем RUL-рядам:
 
 ```text
-P_out_MPa < p_min_mpa
-AND confidence_data >= 0.50
+RUL_ml_h
+RUL_analytic_h
+RUL_fused_h
 ```
 
-ТО:
+Для планового обслуживания фиксируется первая временная точка, где выбранный RUL устойчиво ниже:
 
 ```text
-action = shutdown_request
-priority = P0
-due_time_h = 0.0
+planned_maintenance_rul_h + stable_degraded_rul_h
 ```
 
-Объяснение: выходное давление ниже допустимого уровня при приемлемом качестве данных.
-
-### R-DQ-001. Проверка датчиков при физическом вето
-
-ЕСЛИ:
+Для срочного обслуживания используется:
 
 ```text
-data_hard_veto == true
+urgent_maintenance_rul_h + stable_degraded_rul_h
 ```
 
-ТО:
-
-```text
-action = sensor_check
-priority = P0
-due_time_h = 0.0
-```
-
-Объяснение: ML-прогноз заблокирован из-за физически некорректного измерения.
-
-### R-DQ-002. Проверка датчиков при ненадежных данных
-
-ЕСЛИ:
-
-```text
-quality_code != good
-AND confidence_data < 0.45
-```
-
-ТО:
-
-```text
-action = sensor_check
-priority = P0
-due_time_h = 0.0
-```
-
-Объяснение: данные ненадежны, требуется проверка датчиков.
-
-### R-SAFE-001. Срочное обслуживание при критическом состоянии
-
-ЕСЛИ:
-
-```text
-state == critical
-AND confidence_data >= 0.50
-```
-
-ТО:
-
-```text
-action = urgent_maintenance
-priority = P1
-due_time_h = min(max(RUL_fused_h, 0), urgent_maintenance_rul_h)
-```
-
-Если `RUL_fused_h` недоступен:
-
-```text
-due_time_h = urgent_maintenance_rul_h
-```
-
-При текущем конфиге fallback-срок равен `12` часам.
-
-### R-CONS-001. Ручная проверка при сильном расхождении RUL
-
-ЕСЛИ:
-
-```text
-confidence_consistency < 0.25
-AND confidence_data >= 0.50
-```
-
-ТО:
-
-```text
-action = manual_review
-priority = P1
-due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
-```
-
-Если `RUL_fused_h` недоступен, срок берется равным `planned_maintenance_rul_h`, то есть `72` часам.
-
-Объяснение: ML-RUL и аналитический RUL сильно расходятся.
-
-### R-CONS-002. Ручная проверка при низком общем доверии
-
-ЕСЛИ:
-
-```text
-confidence_total < 0.20
-```
-
-ТО:
-
-```text
-action = manual_review
-priority = P1
-due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
-```
-
-Если `RUL_fused_h` недоступен, срок берется равным `planned_maintenance_rul_h`, то есть `72` часам.
-
-Объяснение: общее доверие к решению низкое.
-
-### R-MNT-003. Срочное обслуживание по итоговому RUL
-
-ЕСЛИ:
-
-```text
-RUL_fused_h < urgent_maintenance_rul_h
-```
-
-ТО:
-
-```text
-action = urgent_maintenance
-priority = P1
-due_time_h = min(max(RUL_fused_h, 0), urgent_maintenance_rul_h)
-```
-
-При текущем конфиге верхняя граница срока равна `12` часам.
-
-### R-MNT-002. Плановое обслуживание при warning и малом RUL
-
-ЕСЛИ:
-
-```text
-state == warning
-AND RUL_fused_h < planned_maintenance_rul_h
-```
-
-ТО:
-
-```text
-action = planned_maintenance
-priority = P2
-due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
-```
-
-При текущем конфиге верхняя граница срока равна `72` часам.
-
-### R-MNT-002. Плановое обслуживание по итоговому RUL
-
-ЕСЛИ:
-
-```text
-RUL_fused_h < planned_maintenance_rul_h
-```
-
-ТО:
-
-```text
-action = planned_maintenance
-priority = P2
-due_time_h = min(max(RUL_fused_h, 0), planned_maintenance_rul_h)
-```
-
-При текущем конфиге верхняя граница срока равна `72` часам.
-
-### R-MNT-001. Продолжение мониторинга
-
-ЕСЛИ не сработали предыдущие правила действий:
-
-```text
-otherwise
-```
-
-ТО:
-
-```text
-action = monitor
-priority = P3
-due_time_h = NaN
-```
-
-Объяснение: критические условия не обнаружены, мониторинг продолжается.
-
-## 6. Правило Объяснения
-
-### R-EXPL-001. Формирование объяснения
-
-При каждом финальном действии в `rule_trace` добавляется:
-
-```text
-R-EXPL-001
-```
-
-Затем формируется текстовое объяснение, включающее:
-
-- выбранный источник RUL;
-- итоговый `RUL_fused_h`;
-- уровень доверия;
-- сработавшие правила;
-- практическое действие для оператора.
-
-`rule_trace` показывает правила, которые определили итоговое решение: одно правило выбора RUL, одно правило действия и `R-EXPL-001`. Он не хранит полный список всех проверенных условий.
-
-## 7. Приоритеты действий
-
-| Приоритет | Действия | Смысл |
-|---|---|---|
-| `P0` | `shutdown_request`, `sensor_check` при плохих данных | Немедленная реакция: безопасность или проверка датчиков. |
-| `P1` | `urgent_maintenance`, `manual_review` | Высокий приоритет: срочное ТО или инженерная проверка. |
-| `P2` | `planned_maintenance` | Плановое обслуживание в пределах расчетного срока. |
-| `P3` | `monitor` | Продолжать штатный мониторинг. |
+Условие должно сохраняться в течение `stable_degraded_rul_h` часов.

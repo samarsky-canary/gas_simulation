@@ -46,7 +46,6 @@ OUTPUT_LABELS = {
     "hybrid_decisions_csv": "гибридные решения CSV",
     "hybrid_decisions_parquet": "гибридные решения Parquet",
     "hybrid_description": "описание гибридной логики",
-    "hybrid_decision_packages_jsonl": "пакеты объяснения решений JSONL",
 }
 
 ML_TRAIN_SCENARIOS = ("slow_clogging", "rapid_clogging", "flow_spikes")
