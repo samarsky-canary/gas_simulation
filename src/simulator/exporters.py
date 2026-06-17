@@ -24,9 +24,7 @@ OBSERVED_COLUMNS = [
     "quality_code",
     "spike_event",
     "state_obs",
-    "alarm_flag",
     "delta_p_norm_q2",
-    "rule_health_index",
 ]
 
 TRUTH_COLUMNS = [

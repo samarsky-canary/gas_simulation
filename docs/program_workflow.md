@@ -208,20 +208,7 @@ hybrid/decision_packages.jsonl
 
 Графики находятся в:
 
-```text
-plots/
-```
-
-Ключевые графики:
-
-- `01_rashod_q.png` - расход газа;
-- `02_davleniya_pin_pout.png` - входное и выходное давление;
-- `03_perepad_delta_p.png` - сырой перепад давления;
-- `04_zasorenie_clog_level.png` - скрытое засорение;
-- `05_ostatochnyi_resurs_rul.png` - остаточный ресурс;
-- `06_sostoyanie_filtra.png` - состояние фильтра;
-- `07_normirovannyi_perepad.png` - нормированный перепад с warning/critical порогами;
-- `08_delta_p_i_zasorenie.png` - сравнение перепада и засорения.
+Статические PNG-графики больше не формируются в `outputs`. Визуализация выполняется в Streamlit через интерактивные Plotly-графики: давление, перепад, состояние фильтра, сравнение RUL, периоды предпочтения источника RUL и доверие к прогнозу.
 
 ## 12. Итог
 

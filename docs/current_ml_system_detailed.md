@@ -396,11 +396,9 @@ random < p_stuck
 - `delta_p_norm_q2`;
 - `state_true`;
 - `state_obs`;
-- `alarm_flag`;
 - `rul_oracle_h`;
 - `rul_analytic_h`;
-- `is_rul_unknown`;
-- `rule_health_index`.
+- `is_rul_unknown`.
 
 Наблюдаемый нормированный перепад:
 
@@ -460,9 +458,7 @@ deltaP_norm_true = deltaP_true / max(flow_factor * temp_factor, 1e-3)
 | `t_c` | sensor model | Наблюдаемая температура. |
 | `quality_code` | validation | Код качества строки. |
 | `state_obs` | labels | Наблюдаемое состояние. |
-| `alarm_flag` | labels | Тревога warning/critical. |
 | `delta_p_norm_q2` | labels | Нормированный наблюдаемый перепад. |
-| `rule_health_index` | labels | Индекс состояния от 0 до 1. |
 
 Русская версия: `raw_observed_ru.csv`.
 
@@ -693,7 +689,6 @@ rule_baseline_description.md
 | `rul_analytic_h` | Аналитический RUL. |
 | `quality_code` | Качество данных. |
 | `rule_state` | Состояние по правилам. |
-| `rule_alarm_flag` | Тревога по правилам. |
 | `rule_recommendation` | Рекомендация по правилам. |
 | `rule_reason` | Текстовое основание правила. |
 | `state_obs` | Состояние из симулятора. |
@@ -920,27 +915,16 @@ ml_baseline/ml_baseline_report.md
 
 ## 10. Графики
 
-Функция:
+Графики строятся в Streamlit через Plotly. Обычный pipeline больше не создает статические PNG-файлы и не пишет каталог `outputs/<scenario>/plots`.
 
-```python
-build_plots(cfg, df, output_dir, hybrid_decisions)
-```
+В UI доступны:
 
-Создаёт:
-
-| Файл | Смысл |
-|---|---|
-| `00_obzornyi_dashboard.png` | Общий обзор ключевых каналов. |
-| `01_rashod_q.png` | Расход газа. |
-| `02_davleniya_pin_pout.png` | Входное и выходное давление. |
-| `03_perepad_delta_p.png` | Сырой перепад давления. |
-| `04_zasorenie_clog_level.png` | Скрытое засорение. |
-| `05_ostatochnyi_resurs_rul.png` | Oracle и аналитический RUL. |
-| `06_sostoyanie_filtra.png` | Состояние фильтра, сглаженное состояние и отметки решений. |
-| `07_normirovannyi_perepad.png` | Нормированный перепад с warning/critical порогами. |
-| `08_delta_p_i_zasorenie.png` | Сравнение перепада и засорения. |
-| `plots_description.md` | Описание графиков. |
-| `plot_diagnostics.md` | Численная диагностика связи перепада и засорения. |
+- давление до и после фильтра;
+- перепад давления;
+- состояние фильтра;
+- сравнение RUL;
+- периоды предпочтения источника RUL;
+- доверие к прогнозу и качество телеметрии.
 
 ## 11. Что выводится в консоль
 

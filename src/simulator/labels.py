@@ -7,7 +7,7 @@ from src.simulator.config import ScenarioConfig
 
 
 def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
-    """Добавляет диагностические состояния, тревоги, RUL и простые rule-признаки."""
+    """Добавляет диагностические состояния и RUL."""
     out = df.copy()
     true_dp_norm = _true_delta_p_norm(cfg, out)
     obs_dp_norm = _observed_delta_p_norm(cfg, out)
@@ -16,17 +16,9 @@ def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     out["state_true"] = _states(true_dp_norm, cfg)
     out["state_obs"] = _states(obs_dp_norm, cfg)
     out.loc[out["quality_code"] != "good", "state_obs"] = "unknown"
-    out["alarm_flag"] = out["state_obs"].isin(["warning", "critical"])
     out["rul_oracle_h"] = _rul_oracle(true_dp_norm, cfg)
     out["rul_analytic_h"] = _rul_analytic(cfg, out)
     out["is_rul_unknown"] = out["rul_oracle_h"].isna()
-    """
-    простой индекс “насколько близко фильтр к критическому состоянию”.
-        0.0  — перепад около нуля
-        0.5  — половина критического порога
-        1.0  — достигнут или превышен критический поро
-    """
-    out["rule_health_index"] = (out["delta_p_norm_q2"] / cfg.dp_crit_kpa).clip(lower=0, upper=1)
     return out
 
 

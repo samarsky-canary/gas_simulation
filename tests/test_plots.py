@@ -9,37 +9,12 @@ from src.ml import predict_ml_baseline, train_and_export_ml_baseline
 from src.simulator.config import ScenarioConfig
 from src.simulator.exporters import build_canonical_dataset
 from src.simulator.runner import run_scenario
-from src.visualization import build_interactive_plot, build_plots
+from src.visualization import build_interactive_plot
 from src.visualization.interactive import (
     INTERACTIVE_PLOT_BUILDERS,
     _quality_issue_summary,
 )
 from src.visualization.plots import _aggregate_rul_source_plot_data
-
-
-def test_build_plots_creates_png_files(tmp_path) -> None:
-    cfg = ScenarioConfig(duration_days=1, step_minutes=30, p_missing=0, p_spike=0, p_stuck=0)
-    df, _ = run_scenario(cfg)
-
-    paths = build_plots(cfg, df, tmp_path)
-
-    png_paths = [path for path in paths.values() if path.suffix == ".png"]
-    assert set(paths) == {
-        "q",
-        "pressure",
-        "delta_p",
-        "state",
-        "rul_comparison",
-        "rul_source_periods",
-        "data_confidence",
-        "spike_rate",
-        "description",
-        "diagnostics",
-    }
-    assert len(png_paths) == 8
-    assert all(path.exists() and path.stat().st_size > 0 for path in png_paths)
-    assert paths["description"].exists()
-    assert paths["diagnostics"].exists()
 
 
 def test_rul_source_plot_data_is_aggregated_hourly() -> None:

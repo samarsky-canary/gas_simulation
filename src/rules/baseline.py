@@ -18,7 +18,6 @@ RULE_COLUMNS = [
     "rul_analytic_h",
     "quality_code",
     "rule_state",
-    "rule_alarm_flag",
     "rule_recommendation",
     "rule_reason",
     "state_obs",
@@ -43,7 +42,6 @@ def apply_rule_baseline(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
         default="unknown",
     )
     result.loc[result["quality_code"].eq("missing"), "rule_state"] = "unknown"
-    result["rule_alarm_flag"] = result["rule_state"].isin(["warning", "critical"])
 
     # Рекомендация сначала строится по RUL, затем усиливается критическим состоянием или плохими данными.
     recommendation = np.full(len(result), "continue_monitoring", dtype=object)

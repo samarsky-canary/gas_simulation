@@ -21,7 +21,7 @@
 
 ## 2. Rule-Based Baseline
 
-Эти правила формируют `rule_state`, `rule_alarm_flag` и `rule_recommendation`.
+Эти правила формируют `rule_state` и `rule_recommendation`.
 
 Порядок применения:
 
@@ -112,15 +112,11 @@ rule_state in {warning, critical}
 
 ТО:
 
-```text
-rule_alarm_flag = true
-```
+Тревожное состояние определяется напрямую по `rule_state in {warning, critical}`.
 
 ИНАЧЕ:
 
-```text
-rule_alarm_flag = false
-```
+Для `normal` и `unknown` отдельный флаг тревоги не формируется.
 
 ### RB-MNT-001. Мониторинг по умолчанию
 

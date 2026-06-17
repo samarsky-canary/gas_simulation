@@ -267,7 +267,6 @@ delta_p_norm_q2 = delta_p_kpa / max(flow_factor, 1e-3)
 Используется:
 
 - для `state_obs`;
-- для `rule_health_index`;
 - в raw observed таблице;
 - в графиках нормированного перепада.
 
@@ -357,25 +356,6 @@ if quality_code != "good":
 - как target для классификатора состояния;
 - в rule-based и hybrid logic.
 
-### 3.5. `alarm_flag`
-
-Функция расчета:
-
-```python
-alarm_flag = state_obs in {"warning", "critical"}
-```
-
-Смысл:
-
-```text
-Бинарный флаг тревожного состояния.
-```
-
-Используется:
-
-- в raw observed таблице;
-- для быстрой фильтрации тревожных точек.
-
 ### 3.6. `rul_oracle_h`
 
 Функция расчета:
@@ -464,33 +444,6 @@ is_rul_unknown = is_nan(rul_oracle_h)
 
 - для интерпретации target;
 - для понимания, какие строки нельзя использовать как полноценную RUL-метку.
-
-### 3.9. `rule_health_index`
-
-Функция расчета:
-
-```python
-rule_health_index = clip(delta_p_norm_q2 / dp_crit_kpa, 0, 1)
-```
-
-Смысл:
-
-```text
-Индекс близости к критическому состоянию.
-```
-
-Интерпретация:
-
-```text
-0.0  - перепад около нуля
-0.5  - половина critical-порога
-1.0  - critical-порог достигнут или превышен
-```
-
-Используется:
-
-- как простой rule-based индекс состояния;
-- в raw observed таблице.
 
 ## 4. Признаки канонического `dataset`
 

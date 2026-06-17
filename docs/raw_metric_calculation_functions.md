@@ -417,42 +417,6 @@ if quality_code != "good":
 
 Именно это поле попадает в `dataset.csv` как `state`.
 
-### 5.3. `alarm_flag`
-
-Функция расчета:
-
-```python
-alarm_flag = state_obs in {"warning", "critical"}
-```
-
-Смысл:
-
-```text
-Простой бинарный флаг тревожного состояния по наблюдаемой телеметрии.
-```
-
-### 5.4. `rule_health_index`
-
-Функция расчета:
-
-```python
-rule_health_index = clip(delta_p_norm_q2 / dp_crit_kpa, 0, 1)
-```
-
-Смысл:
-
-```text
-Нормированная близость наблюдаемого состояния к critical-порогу.
-```
-
-Интерпретация:
-
-```text
-0.0  - перепад около нуля
-0.5  - половина critical-порога
-1.0  - critical-порог достигнут или превышен
-```
-
 ## 6. Raw observed таблица
 
 Файл:
@@ -477,9 +441,7 @@ raw_observed.parquet
 | `t_c` | sensor model + faults |
 | `quality_code` | `good`, `missing`, `invalid` |
 | `state_obs` | состояние по `delta_p_norm_q2` и `quality_code` |
-| `alarm_flag` | `state_obs in {warning, critical}` |
 | `delta_p_norm_q2` | нормированный наблюдаемый перепад |
-| `rule_health_index` | `clip(delta_p_norm_q2 / dp_crit_kpa, 0, 1)` |
 
 ## 7. Отличие сырых метрик от чистых
 

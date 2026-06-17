@@ -281,19 +281,7 @@ quality_code != good
 state_obs = unknown
 ```
 
-## 12. Флаг тревоги `alarm_flag`
-
-Реализация: `src/simulator/labels.py`.
-
-Формула:
-
-```text
-alarm_flag = state_obs in {warning, critical}
-```
-
-То есть тревога включается, если наблюдаемое состояние фильтра достигло warning или critical.
-
-## 13. Oracle RUL `RUL_oracle_h`
+## 12. Oracle RUL `RUL_oracle_h`
 
 Реализация: `src/simulator/labels.py`, функция `_rul_oracle(...)`.
 
@@ -436,33 +424,7 @@ RUL_analytic_h(t) = 0
 
 Поэтому они могут различаться.
 
-## 17. Индекс здоровья правил `rule_health_index`
-
-Реализация: `src/simulator/labels.py`.
-
-Формула:
-
-```text
-rule_health_index(t) =
-clip(delta_p_norm_q2(t) / dp_crit_kpa, 0, 1)
-```
-
-Где:
-
-- `delta_p_norm_q2` - наблюдаемый нормированный перепад;
-- `dp_crit_kpa` - critical-порог.
-
-Интерпретация:
-
-| Значение | Смысл |
-|---:|---|
-| `0.0` | Перепад близок к нулю. |
-| `0.5` | Перепад примерно на половине critical-порога. |
-| `1.0` | Critical-порог достигнут или превышен. |
-
-Это не ML-оценка, а простая rule-based шкала близости к критическому состоянию.
-
-## 18. Итоговая таблица аналитических величин
+## 17. Итоговая таблица аналитических величин
 
 | Поле | Где считается | Формула / логика |
 |---|---|---|
@@ -475,14 +437,12 @@ clip(delta_p_norm_q2(t) / dp_crit_kpa, 0, 1)
 | `deltaP_norm_kPa` | `labels.py`, `exporters.py`, `features.py` | `deltaP_kPa / max((Q_m3h / Q_nominal)^alpha_flow, 1e-3)`. |
 | `state_true` | `labels.py` | Пороговая классификация `true_delta_p_norm`. |
 | `state_obs` | `labels.py` | Пороговая классификация наблюдаемого `deltaP_norm_kPa`, плохие данные -> `unknown`. |
-| `alarm_flag` | `labels.py` | `state_obs in {warning, critical}`. |
 | `RUL_oracle_h` | `labels.py` | Время до будущего достижения `true_delta_p_norm >= dp_crit_kpa`. |
 | `c_crit` | `labels.py` | `clip((dp_crit / dp0 - 1) / k_c, 0, 1) ^ (1 / beta)`. |
 | `rate` | `labels.py` | `max(k_s_per_hour * load, 1e-9)`. |
 | `RUL_analytic_h` | `labels.py` | `max(c_crit - clog_level, 0) / rate`. |
-| `rule_health_index` | `labels.py` | `clip(delta_p_norm_q2 / dp_crit_kpa, 0, 1)`. |
 
-## 19. Что используется в гибридной логике
+## 18. Что используется в гибридной логике
 
 Гибридный слой использует аналитические параметры как независимую опору рядом с ML:
 

@@ -18,7 +18,6 @@ from src.simulator.config import SCENARIO_OVERRIDES, ScenarioConfig, load_config
 from src.simulator.exporters import build_canonical_dataset, export_run
 from src.simulator.runner import run_scenario
 from src.storage import StoredMLTraining, TrainingRepository
-from src.visualization import build_plots
 
 
 OUTPUT_LABELS = {
@@ -79,7 +78,6 @@ class PipelineResult:
     rule_paths: dict[str, Path]
     ml_paths: dict[str, Path]
     hybrid_paths: dict[str, Path]
-    plot_paths: dict[str, Path]
 
 
 def run_pipeline(
@@ -87,7 +85,7 @@ def run_pipeline(
     output_dir: Path | None = None,
     training_repository: TrainingRepository | None = None,
 ) -> PipelineResult:
-    """Запускает симуляцию, экспорт, признаки, baseline-модели, гибридную логику и графики."""
+    """Запускает симуляцию, экспорт, признаки, baseline-модели и гибридную логику."""
     df, report = run_scenario(cfg)
     output_dir = output_dir or Path("outputs") / cfg.scenario_name
     paths = export_run(cfg, df, report, output_dir, export_csv=False)
@@ -114,7 +112,6 @@ def run_pipeline(
     hybrid_paths = export_hybrid_decisions(
         hybrid_decisions, output_dir, export_csv=False
     )
-    plot_paths = build_plots(cfg, df, output_dir, hybrid_decisions)
     return PipelineResult(
         cfg=cfg,
         output_dir=output_dir,
@@ -125,7 +122,6 @@ def run_pipeline(
         rule_paths=rule_paths,
         ml_paths=ml_paths,
         hybrid_paths=hybrid_paths,
-        plot_paths=plot_paths,
     )
 
 
@@ -207,9 +203,6 @@ def main() -> None:
     for name, path in result.hybrid_paths.items():
         label = OUTPUT_LABELS.get(name, name)
         print(f"- {label}: {path}")
-    print("Созданные графики:")
-    for path in result.plot_paths.values():
-        print(f"- {path}")
 
 
 def _build_ml_training_corpus(
