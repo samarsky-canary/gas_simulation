@@ -164,5 +164,13 @@ def test_randomized_training_corpus_has_independent_runs() -> None:
     assert len(test_run_ids) == 2
     assert metadata["dataset_count"] == 8
     assert len(metadata["runs"]) == 8
-    assert dataset["scenario"].nunique() == 6
-    assert "normal" not in set(dataset["scenario"])
+    assert dataset["scenario"].nunique() == 7
+    assert "normal" in set(dataset["scenario"])
+    normal_configs = [
+        run["config"]
+        for run in metadata["runs"]
+        if run["config"]["scenario_name"] == "normal"
+    ]
+    assert normal_configs
+    assert all(config["duration_days"] >= 300 for config in normal_configs)
+    assert all(config["k_s_per_hour"] >= 1.0e-4 for config in normal_configs)

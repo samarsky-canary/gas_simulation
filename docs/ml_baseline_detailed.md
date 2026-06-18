@@ -62,6 +62,13 @@ P_out_MPa
 deltaP_kPa
 Q_m3h
 T_C
+q_nominal_m3h
+p_in_nominal_mpa
+dp0_kpa
+k_s_per_hour
+k_c
+beta
+gamma_load
 deltaP_norm_kPa
 deltaP_roll_mean_1h
 deltaP_roll_std_1h
@@ -83,6 +90,7 @@ T_C
 
 Инженерные признаки:
 
+- `q_nominal_m3h`, `p_in_nominal_mpa`, `dp0_kpa`, `k_s_per_hour`, `k_c`, `beta`, `gamma_load` описывают паспортные и физические параметры текущего прогона;
 - `deltaP_norm_kPa` очищает перепад от влияния расхода;
 - `deltaP_roll_mean_1h` сглаживает перепад за последний час;
 - `deltaP_roll_std_1h` показывает нестабильность перепада за последний час;
@@ -137,49 +145,29 @@ time_above_warn
 
 В `main.py` ML обучается не только на текущем одном прогоне, а на корпусе из нескольких независимых синтетических прогонов.
 
-Train-сценарии:
+В актуальной randomized-схеме корпус строится из всех сценариев:
 
 ```text
+normal
 slow_clogging
 rapid_clogging
 flow_spikes
-```
-
-Train seed:
-
-```text
-7, 13, 21
-```
-
-Test-сценарии:
-
-```text
-slow_clogging
-rapid_clogging
-flow_spikes
-```
-
-Test seed:
-
-```text
-42, 101
-```
-
-Stress-test сценарии:
-
-```text
 sensor_bias
 sensor_stuck
 missing_data
 ```
 
-Stress-test seed:
+Для каждого прогона варьируются паспортные параметры фильтра, расход,
+входное давление, чистый перепад `dp0_kpa`, начальное засорение, шумы и
+дефекты датчиков.
 
-```text
-42
-```
+Для `normal` используется отдельный обучающий профиль: малая, но достижимая
+скорость деградации `k_s_per_hour ~= 0.00010...0.00018` и горизонт не меньше
+300 суток. Это нужно, чтобы здоровые длинные прогоны тоже давали известный
+`RUL_oracle_h` и участвовали в обучении, а модель не сжимала начальный RUL к
+типичному значению деградирующих сценариев.
 
-Каждый прогон получает свой `run_id`, например `slow_clogging_42`.
+Каждый прогон получает свой `run_id`, например `normal_20260615_1`.
 
 ## 7. Train/test split
 

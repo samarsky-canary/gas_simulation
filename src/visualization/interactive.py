@@ -328,7 +328,7 @@ def _rul_source_periods_plot(
     fig.update_yaxes(title_text="Решений", row=4, col=1)
     return _style_figure(
         fig,
-        title="Периоды предпочтения источника остаточного ресурса",
+        title="",
         height=1000,
     )
 

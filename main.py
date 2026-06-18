@@ -51,9 +51,7 @@ ML_TRAIN_SEEDS = (7, 13, 21)
 ML_TEST_SEEDS = (42, 101)
 ML_STRESS_TEST_SEEDS = (42,)
 ML_CORPUS_MIN_DURATION_DAYS = 90
-ML_RANDOMIZED_SCENARIOS = tuple(
-    scenario for scenario in SCENARIO_OVERRIDES if scenario != "normal"
-)
+ML_RANDOMIZED_SCENARIOS = tuple(SCENARIO_OVERRIDES)
 ML_DEFAULT_DATASET_COUNT = 100
 ML_DEFAULT_TEST_SHARE = 0.2
 ML_DEFAULT_CORPUS_SEED = 20260614
@@ -338,8 +336,11 @@ def _randomized_ml_config(
     raw = base_cfg.model_dump()
     raw.update(SCENARIO_OVERRIDES[scenario_name])
 
+    q_nominal = float(rng.uniform(450.0, 900.0))
     p_nominal = float(rng.uniform(0.45, 0.8))
-    scenario_k_s = float(raw["k_s_per_hour"])
+    k_s_per_hour = _training_k_s_per_hour(
+        scenario_name, float(raw["k_s_per_hour"]), rng
+    )
     raw.update(
         {
             "filter_id": f"F-ML-{ordinal:04d}",
@@ -347,15 +348,20 @@ def _randomized_ml_config(
             "step_minutes": step_minutes,
             "seed": corpus_seed_for_run(corpus_seed, ordinal),
             "a_q": float(rng.uniform(0.06, 0.25)),
+            "q_nominal_m3h": q_nominal,
+            "q_min_m3h": q_nominal * 0.5,
+            "q_max_m3h": q_nominal * 1.5,
             "q_process_std_m3h": float(rng.uniform(15.0, 90.0)),
             "p_in_nominal_mpa": p_nominal,
-            "p_min_mpa": max(0.05, p_nominal * 0.2),
-            "p_max_mpa": p_nominal * 1.8,
+            "p_min_mpa": p_nominal * 0.5,
+            "p_max_mpa": p_nominal * 1.5,
             "a_p_mpa": float(rng.uniform(0.005, 0.03)),
             "t_nominal_c": float(rng.uniform(5.0, 25.0)),
             "a_t_c": float(rng.uniform(2.0, 10.0)),
+            "dp0_kpa": float(rng.uniform(0.8, 1.8)),
             "c0": float(rng.uniform(0.01, 0.2)),
-            "k_s_per_hour": scenario_k_s * float(rng.uniform(0.65, 1.45)),
+            "k_c": float(rng.uniform(5.5, 10.5)),
+            "k_s_per_hour": k_s_per_hour,
             "sigma_p_mpa": float(rng.uniform(0.0001, 0.0008)),
             "sigma_q_rel": float(rng.uniform(0.003, 0.03)),
             "sigma_t_abs_c": float(rng.uniform(0.1, 0.8)),
@@ -367,7 +373,25 @@ def _randomized_ml_config(
         }
     )
     raw["duration_days"] = _training_duration_days(raw, rng)
+    if scenario_name == "normal":
+        raw["duration_days"] = max(
+            int(raw["duration_days"]),
+            int(rng.integers(300, 366)),
+        )
     return ScenarioConfig.model_validate(raw)
+
+
+def _training_k_s_per_hour(
+    scenario_name: str,
+    base_rate: float,
+    rng: np.random.Generator,
+) -> float:
+    """Подбирает скорость деградации для обучающих прогонов с достижимым RUL target."""
+    if scenario_name == "normal":
+        return float(rng.uniform(1.0e-4, 1.8e-4))
+    if scenario_name == "rapid_clogging":
+        return float(base_rate * rng.uniform(0.7, 1.7))
+    return float(base_rate * rng.uniform(0.55, 1.6))
 
 
 def _training_duration_days(

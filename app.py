@@ -21,6 +21,8 @@ from src.visualization import (
 
 BASE_CONFIG_PATH = Path("configs/base.yaml")
 OUTPUT_ROOT = Path("outputs/ui_runs")
+PRG_SCHEME_IMAGE = Path("docs/prg_scheme2.png")
+PRG_SCHEME_WIDTH_PX = 641
 
 GRAPH_CHOICES = {
     "Давление до и после фильтра": "pressure",
@@ -63,13 +65,13 @@ def _metric_value(value: float | None, suffix: str = "") -> str:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Расчёт ресурса газового фильтра",
+        page_title="Расчёт остаточного ресурса ФГ на узле ПРГ",
         layout="wide",
     )
 
     base_cfg = load_config(BASE_CONFIG_PATH)
 
-    st.title("Расчёт ресурса газового фильтра")
+    st.title("Расчёт остаточного ресурса ФГ на узле ПРГ")
 
     with st.sidebar:
         st.header("Параметры запуска")
@@ -88,8 +90,23 @@ def main() -> None:
         scenario_p_spike = float(
             SCENARIO_OVERRIDES[scenario_name].get("p_spike", base_cfg.p_spike)
         )
+        scenario_k_s_per_hour = float(
+            SCENARIO_OVERRIDES[scenario_name].get(
+                "k_s_per_hour", base_cfg.k_s_per_hour
+            )
+        )
+        scenario_a_q = float(SCENARIO_OVERRIDES[scenario_name].get("a_q", base_cfg.a_q))
 
         with st.form("simulation_form"):
+            start_date = st.date_input(
+                "Дата начала",
+                value=base_cfg.start_time.date(),
+            )
+            start_time = st.time_input(
+                "Время начала",
+                value=base_cfg.start_time.timetz().replace(tzinfo=None),
+                step=3600,
+            )
             duration_days = st.number_input(
                 "Длительность, суток",
                 min_value=1,
@@ -104,12 +121,57 @@ def main() -> None:
                 value=base_cfg.step_minutes,
                 step=1,
             )
+            st.subheader("Параметры фильтра")
+            q_nominal_m3h = st.number_input(
+                "Паспортный / номинальный расчетный расход, м³/ч",
+                min_value=1.0,
+                value=float(base_cfg.q_nominal_m3h),
+                step=10.0,
+                format="%.1f",
+            )
+            q_min_m3h = q_nominal_m3h * 0.5
+            q_max_m3h = q_nominal_m3h * 1.5
+            st.caption(
+                "Рабочий диапазон расхода рассчитывается автоматически: "
+                f"{q_min_m3h:.1f}...{q_max_m3h:.1f} м³/ч."
+            )
+            p_in_nominal_mpa = st.number_input(
+                "Номинальное входное давление, МПа",
+                min_value=0.01,
+                value=float(base_cfg.p_in_nominal_mpa),
+                step=0.01,
+                format="%.3f",
+            )
+            p_min_mpa = p_in_nominal_mpa * 0.5
+            p_max_mpa = p_in_nominal_mpa * 1.5
+            st.caption(
+                "Рабочий диапазон давления рассчитывается автоматически: "
+                f"{p_min_mpa:.3f}...{p_max_mpa:.3f} МПа."
+            )
+            dp0_kpa = st.number_input(
+                "Перепад давления на чистом фильтре, кПа",
+                min_value=0.01,
+                value=float(base_cfg.dp0_kpa),
+                step=0.1,
+                format="%.2f",
+            )
+            st.subheader("Расход газа")
+            a_q_percent = st.number_input(
+                "Амплитуда суточных колебаний расхода, %",
+                min_value=0.0,
+                max_value=100.0,
+                value=scenario_a_q * 100.0,
+                step=1.0,
+                format="%.1f",
+                key=f"a_q_percent_{scenario_name}",
+            )
             k_s_per_hour = st.number_input(
                 "Базовая скорость роста засорения, 1/ч",
                 min_value=0.0,
-                value=float(base_cfg.k_s_per_hour),
+                value=scenario_k_s_per_hour,
                 step=0.00001,
                 format="%.8f",
+                key=f"k_s_per_hour_{scenario_name}",
             )
             st.subheader("Пороги обслуживания")
             planned_maintenance_rul_h = st.number_input(
@@ -166,10 +228,24 @@ def main() -> None:
             submitted = st.form_submit_button("Запустить симуляцию", type="primary")
 
     if submitted:
+        start_datetime = datetime.combine(
+            start_date,
+            start_time,
+            tzinfo=base_cfg.start_time.tzinfo,
+        )
         overrides = {
             "scenario_name": scenario_name,
+            "start_time": start_datetime.isoformat(),
             "duration_days": int(duration_days),
             "step_minutes": int(step_minutes),
+            "q_nominal_m3h": float(q_nominal_m3h),
+            "q_min_m3h": float(q_min_m3h),
+            "q_max_m3h": float(q_max_m3h),
+            "a_q": float(a_q_percent) / 100.0,
+            "p_in_nominal_mpa": float(p_in_nominal_mpa),
+            "p_min_mpa": float(p_min_mpa),
+            "p_max_mpa": float(p_max_mpa),
+            "dp0_kpa": float(dp0_kpa),
             "k_s_per_hour": float(k_s_per_hour),
             "planned_maintenance_rul_h": float(planned_maintenance_rul_h),
             "urgent_maintenance_rul_h": float(urgent_maintenance_rul_h),
@@ -186,52 +262,56 @@ def main() -> None:
 
     result = st.session_state.get("pipeline_result")
     if result is None:
+        st.subheader("Упрощенная схема ПРГ")
+        if PRG_SCHEME_IMAGE.exists():
+            st.image(
+                str(PRG_SCHEME_IMAGE),
+                caption="Схема оборудования и газопроводов ПРГ",
+                width=PRG_SCHEME_WIDTH_PX,
+            )
+        else:
+            st.warning(f"Файл схемы не найден: {PRG_SCHEME_IMAGE}")
         st.info("Задайте конфигурацию фильтра и запустите симуляцию.")
         return
-
-    col_rows, col_quality, col_output = st.columns([1, 1, 2])
-    col_rows.metric("Строк", f"{result.row_count:,}".replace(",", " "))
-    col_quality.metric("Строк с проблемами качества", result.quality_issue_rows)
-    col_output.write("Каталог результатов")
-    col_output.code(str(result.output_dir), language="text")
 
     telemetry = _read_parquet(str(result.export_paths["wide_debug_parquet"]))
     hybrid_decisions = _read_parquet(
         str(result.hybrid_paths["hybrid_decisions_parquet"])
+    )
+
+    col_rows, col_quality, col_output = st.columns([1, 1, 2])
+    col_rows.metric("Строк", f"{result.row_count:,}".replace(",", " "))
+    col_quality.metric("Строк с проблемами качества", result.quality_issue_rows)
+    col_output.write("События обслуживания")
+    col_output.dataframe(
+        build_maintenance_event_table(result.cfg, hybrid_decisions),
+        use_container_width=True,
+        hide_index=True,
     )
     plot_config = {
         "displaylogo": False,
         "scrollZoom": True,
         "responsive": True,
     }
-    charts_tab, quality_tab = st.tabs(["Графики", "Качество ML"])
+    graph_label = st.radio(
+        "График",
+        list(GRAPH_CHOICES),
+        horizontal=True,
+    )
+    plot_key = GRAPH_CHOICES[graph_label]
+    figure = build_interactive_plot(
+        plot_key,
+        result.cfg,
+        telemetry,
+        hybrid_decisions,
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        config=plot_config,
+    )
 
-    with charts_tab:
-        graph_label = st.radio(
-            "График",
-            list(GRAPH_CHOICES),
-            horizontal=True,
-        )
-        plot_key = GRAPH_CHOICES[graph_label]
-        figure = build_interactive_plot(
-            plot_key,
-            result.cfg,
-            telemetry,
-            hybrid_decisions,
-        )
-        st.plotly_chart(
-            figure,
-            use_container_width=True,
-            config=plot_config,
-        )
-        st.subheader("События обслуживания")
-        st.dataframe(
-            build_maintenance_event_table(result.cfg, hybrid_decisions),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    with quality_tab:
+    if False:
         metrics = _read_json(str(result.ml_paths["ml_metrics_json"]))
         training = training_quality_summary(metrics)
 
