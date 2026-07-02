@@ -289,6 +289,8 @@ def _rul_source_periods_plot(
     )
 
     _add_line(fig, 3, plot_data, "confidence_total", "Итоговое доверие", "#111111")
+    if "confidence_data" in plot_data.columns:
+        _add_line(fig, 3, plot_data, "confidence_data", "Доверие к данным", "#1f77b4")
     _add_line(
         fig,
         3,

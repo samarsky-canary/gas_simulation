@@ -29,9 +29,8 @@ FIRST_UI_RUN_SEED = 42
 MAX_RANDOM_SEED = 2**32 - 1
 
 GRAPH_CHOICES = {
+    "Перепад давления": "delta_p",
     "Давление до и после фильтра": "pressure",
-    "Перепад deltaP": "delta_p",
-    "Состояние фильтра": "state",
     "Оценка остаточного ресурса": "rul_comparison",
     "Источник остаточного ресурса": "rul_source_periods",
     "Доверие и качество данных": "data_confidence",

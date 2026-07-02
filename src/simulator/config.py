@@ -95,7 +95,7 @@ class ScenarioConfig(BaseModel):
 
 
 SCENARIO_OVERRIDES: dict[str, dict[str, Any]] = {
-    "normal": {"k_s_per_hour": 2e-5, "p_missing": 0.001, "p_spike": 0.0, "p_stuck": 0.0},
+    "normal": {"k_s_per_hour": 0.00007000, "p_missing": 0.001, "p_spike": 0.0, "p_stuck": 0.0},
     "slow_clogging": {"p_missing": 0.01, "p_spike": 0.005},
     "rapid_clogging": {"k_s_per_hour": 1.1e-3, "a_q": 0.18},
     "flow_spikes": {"p_spike": 0.006, "q_process_std_m3h": 75.0},

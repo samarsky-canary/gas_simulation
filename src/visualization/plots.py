@@ -31,9 +31,11 @@ def _aggregate_rul_source_plot_data(decisions: pd.DataFrame) -> pd.DataFrame:
         "RUL_ml_h",
         "RUL_analytic_h",
         "RUL_fused_h",
+        "confidence_data",
         "confidence_total",
         "confidence_consistency",
     ]
+    numeric_columns = [column for column in numeric_columns if column in data.columns]
     numeric = data[numeric_columns].resample(RUL_SOURCE_PLOT_FREQUENCY).mean()
     source = data["rul_source"].resample(RUL_SOURCE_PLOT_FREQUENCY).agg(_dominant_value)
     return numeric.assign(rul_source=source).dropna(how="all").reset_index()
