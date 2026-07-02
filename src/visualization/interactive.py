@@ -175,28 +175,24 @@ def _rul_comparison_plot(
     decisions: pd.DataFrame | None,
 ) -> go.Figure:
     rul_data = (
-        df.set_index("timestamp")[["rul_oracle_h", "rul_analytic_h"]]
+        df.set_index("timestamp")[["rul_analytic_h"]]
         .resample("1h")
         .mean()
         .reset_index()
     )
     fig = make_subplots(
-        rows=4,
+        rows=3,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.04,
         subplot_titles=(
-            "Эталонный остаточный ресурс",
             "Аналитический остаточный ресурс",
             "Остаточный ресурс по ML",
             "Итоговый остаточный ресурс",
         ),
     )
     _add_line(
-        fig, 1, rul_data, "rul_oracle_h", "Эталонный остаточный ресурс", "#4b5563"
-    )
-    _add_line(
-        fig, 2, rul_data, "rul_analytic_h", "Аналитический остаточный ресурс", "#8c564b"
+        fig, 1, rul_data, "rul_analytic_h", "Аналитический остаточный ресурс", "#8c564b"
     )
     if decisions is not None:
         hourly = (
@@ -205,19 +201,19 @@ def _rul_comparison_plot(
             .mean()
             .reset_index()
         )
-        _add_line(fig, 3, hourly, "RUL_ml_h", "Остаточный ресурс по ML", "#1f77b4")
+        _add_line(fig, 2, hourly, "RUL_ml_h", "Остаточный ресурс по ML", "#1f77b4")
         _add_line(
-            fig, 4, hourly, "RUL_fused_h", "Итоговый остаточный ресурс", "#d62728"
+            fig, 3, hourly, "RUL_fused_h", "Итоговый остаточный ресурс", "#d62728"
         )
 
-    for row in range(1, 5):
+    for row in range(1, 4):
         _add_subplot_thresholds(fig, cfg, row)
         fig.update_yaxes(title_text="Остаточный ресурс, ч", row=row, col=1)
-    fig.update_xaxes(title_text="Время", row=4, col=1)
+    fig.update_xaxes(title_text="Время", row=3, col=1)
     return _style_figure(
         fig,
-        title="Сравнение оценок остаточного ресурса, среднее за 1 час",
-        height=900,
+        title="Оценки остаточного ресурса, среднее за 1 час",
+        height=760,
     )
 
 

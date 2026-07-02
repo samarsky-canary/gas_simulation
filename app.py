@@ -28,7 +28,7 @@ GRAPH_CHOICES = {
     "Давление до и после фильтра": "pressure",
     "Перепад deltaP": "delta_p",
     "Состояние фильтра": "state",
-    "Сравнение остаточного ресурса": "rul_comparison",
+    "Оценка остаточного ресурса": "rul_comparison",
     "Источник остаточного ресурса": "rul_source_periods",
     "Доверие и качество данных": "data_confidence",
 }
@@ -155,6 +155,22 @@ def main() -> None:
                 step=0.1,
                 format="%.2f",
             )
+            dp_warn_kpa = st.number_input(
+                "Предупредительный порог перепада, кПа",
+                min_value=0.01,
+                value=float(base_cfg.dp_warn_kpa),
+                step=0.1,
+                format="%.2f",
+                help="Порог warning-состояния фильтра по нормированному перепаду давления.",
+            )
+            dp_crit_kpa = st.number_input(
+                "Критический порог перепада, кПа",
+                min_value=float(dp_warn_kpa) + 0.01,
+                value=max(float(base_cfg.dp_crit_kpa), float(dp_warn_kpa) + 0.01),
+                step=0.1,
+                format="%.2f",
+                help="Порог critical-состояния фильтра по нормированному перепаду давления.",
+            )
             st.subheader("Расход газа")
             a_q_percent = st.number_input(
                 "Амплитуда суточных колебаний расхода, %",
@@ -246,6 +262,8 @@ def main() -> None:
             "p_min_mpa": float(p_min_mpa),
             "p_max_mpa": float(p_max_mpa),
             "dp0_kpa": float(dp0_kpa),
+            "dp_warn_kpa": float(dp_warn_kpa),
+            "dp_crit_kpa": float(dp_crit_kpa),
             "k_s_per_hour": float(k_s_per_hour),
             "planned_maintenance_rul_h": float(planned_maintenance_rul_h),
             "urgent_maintenance_rul_h": float(urgent_maintenance_rul_h),

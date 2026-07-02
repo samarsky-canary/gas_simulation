@@ -6,6 +6,11 @@ import pandas as pd
 from src.simulator.config import ScenarioConfig
 
 
+ANALYTIC_MIN_FLOW_FRACTION = 0.05
+ANALYTIC_LOW_DP_FRACTION = 0.05
+ANALYTIC_LOW_DP_MIN_KPA = 0.05
+
+
 def label_run(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.DataFrame:
     """Добавляет диагностические состояния и RUL."""
     out = df.copy()
@@ -56,8 +61,26 @@ def _rul_analytic(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:
     rate = np.maximum(cfg.k_s_per_hour * load, 1e-9)
     result = np.maximum(c_crit - clog, 0.0) / rate
     invalid = np.isnan(q) | np.isnan(delta_p_norm)
+    invalid |= _unreliable_analytic_mask(cfg, df).to_numpy()
     result[invalid] = np.nan
     return result
+
+
+def _unreliable_analytic_mask(cfg: ScenarioConfig, df: pd.DataFrame) -> pd.Series:
+    """Marks operating points where observed pressure drop cannot support analytic RUL."""
+    q = df["q_m3h"].astype(float)
+    delta_p = df["delta_p_kpa"].astype(float)
+    low_flow = q < cfg.q_nominal_m3h * ANALYTIC_MIN_FLOW_FRACTION
+    near_zero_dp = delta_p <= max(
+        ANALYTIC_LOW_DP_MIN_KPA,
+        cfg.dp0_kpa * ANALYTIC_LOW_DP_FRACTION,
+    )
+    informative_flow = q >= cfg.q_nominal_m3h * ANALYTIC_MIN_FLOW_FRACTION
+    if "quality_code" in df.columns:
+        bad_quality = df["quality_code"] != "good"
+    else:
+        bad_quality = pd.Series(False, index=df.index)
+    return low_flow | (near_zero_dp & informative_flow) | bad_quality
 
 
 def _true_delta_p_norm(cfg: ScenarioConfig, df: pd.DataFrame) -> np.ndarray:

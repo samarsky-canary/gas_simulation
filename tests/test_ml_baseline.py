@@ -174,3 +174,32 @@ def test_randomized_training_corpus_has_independent_runs() -> None:
     assert normal_configs
     assert all(config["duration_days"] >= 300 for config in normal_configs)
     assert all(config["k_s_per_hour"] >= 1.0e-4 for config in normal_configs)
+
+
+def test_randomized_training_corpus_can_sample_each_run_by_rul_bucket() -> None:
+    cfg = ScenarioConfig(
+        duration_days=2,
+        step_minutes=60,
+        p_missing=0,
+        p_spike=0,
+        p_stuck=0,
+    )
+
+    dataset, features, test_run_ids, metadata = _build_randomized_ml_training_corpus(
+        cfg,
+        dataset_count=8,
+        corpus_seed=123,
+        test_share=0.25,
+        step_minutes=30,
+        sample_rows_per_run=12,
+    )
+
+    assert dataset["run_id"].nunique() == 8
+    assert features["run_id"].nunique() == 8
+    assert len(test_run_ids) == 2
+    assert len(dataset) <= 8 * 12
+    assert len(features) == len(dataset)
+    assert metadata["sampling_strategy"] == "balanced_rul_buckets_per_run"
+    assert metadata["sample_rows_per_run"] == 12
+    assert all(run["sampled_rows"] <= 12 for run in metadata["runs"])
+    assert all(run["sampling"]["enabled"] for run in metadata["runs"])

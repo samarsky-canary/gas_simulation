@@ -57,6 +57,8 @@ ML_DEFAULT_DATASET_COUNT = 100
 ML_DEFAULT_TEST_SHARE = 0.2
 ML_DEFAULT_CORPUS_SEED = 20260614
 ML_DEFAULT_STEP_MINUTES = 30
+ML_DEFAULT_SAMPLE_ROWS_PER_RUN = 0
+ML_RUL_SAMPLE_BUCKETS_H = (0.0, 24.0, 100.0, 720.0, 2000.0, 5000.0, 10000.0, np.inf)
 LATEST_RUN_STORAGE_ENV = "LATEST_RUN_STORAGE"
 LATEST_RUN_STORAGE_POSTGRES = "postgres"
 
@@ -161,6 +163,15 @@ def main() -> None:
         default=ML_DEFAULT_STEP_MINUTES,
         help="Sampling step for generated training datasets.",
     )
+    parser.add_argument(
+        "--training-sample-rows-per-run",
+        type=int,
+        default=ML_DEFAULT_SAMPLE_ROWS_PER_RUN,
+        help=(
+            "Maximum rows kept from each generated run using balanced RUL buckets. "
+            "Use 0 to keep all rows."
+        ),
+    )
     args = parser.parse_args()
     cfg = load_config(Path("configs/base.yaml"))
     if args.train_ml:
@@ -170,12 +181,15 @@ def main() -> None:
             parser.error("--test-share must be between 0 and 1")
         if not 1 <= args.training_step_minutes <= 120:
             parser.error("--training-step-minutes must be between 1 and 120")
+        if args.training_sample_rows_per_run < 0:
+            parser.error("--training-sample-rows-per-run must be non-negative")
         training = train_ml_baseline_database(
             cfg,
             dataset_count=args.train_datasets,
             corpus_seed=args.training_seed,
             test_share=args.test_share,
             step_minutes=args.training_step_minutes,
+            sample_rows_per_run=args.training_sample_rows_per_run,
         )
         print("ML baseline trained and stored in PostgreSQL:")
         print(f"- training_id: {training.training_id}")
@@ -246,6 +260,7 @@ def train_ml_baseline_database(
     corpus_seed: int = ML_DEFAULT_CORPUS_SEED,
     test_share: float = ML_DEFAULT_TEST_SHARE,
     step_minutes: int = ML_DEFAULT_STEP_MINUTES,
+    sample_rows_per_run: int = ML_DEFAULT_SAMPLE_ROWS_PER_RUN,
 ) -> StoredMLTraining:
     """Обучает общий ML baseline и регистрирует новую версию в PostgreSQL."""
     ml_dataset, ml_features, test_run_ids, corpus_metadata = (
@@ -255,6 +270,7 @@ def train_ml_baseline_database(
             corpus_seed=corpus_seed,
             test_share=test_share,
             step_minutes=step_minutes,
+            sample_rows_per_run=sample_rows_per_run,
         )
     )
     trained = train_ml_baseline(
@@ -275,6 +291,7 @@ def _build_randomized_ml_training_corpus(
     corpus_seed: int,
     test_share: float,
     step_minutes: int,
+    sample_rows_per_run: int = ML_DEFAULT_SAMPLE_ROWS_PER_RUN,
 ) -> tuple[pd.DataFrame, pd.DataFrame, set[str], dict[str, object]]:
     """Генерирует воспроизводимый корпус с вариацией режимов, физики и дефектов."""
     if dataset_count < 2:
@@ -283,6 +300,8 @@ def _build_randomized_ml_training_corpus(
         raise ValueError("test_share must be between 0 and 1")
     if not 1 <= step_minutes <= 120:
         raise ValueError("step_minutes must be between 1 and 120")
+    if sample_rows_per_run < 0:
+        raise ValueError("sample_rows_per_run must be non-negative")
 
     rng = np.random.default_rng(corpus_seed)
     configs = [
@@ -310,8 +329,17 @@ def _build_randomized_ml_training_corpus(
         )
         run_df, _ = run_scenario(run_cfg)
         run_id = str(run_df["run_id"].iloc[0])
-        datasets.append(build_canonical_dataset(run_cfg, run_df))
-        features.append(build_features(run_cfg, run_df))
+        run_dataset = build_canonical_dataset(run_cfg, run_df)
+        run_features = build_features(run_cfg, run_df)
+        original_rows = len(run_dataset)
+        run_dataset, run_features, sampling = _sample_training_run(
+            run_dataset,
+            run_features,
+            max_rows=sample_rows_per_run,
+            rng=rng,
+        )
+        datasets.append(run_dataset)
+        features.append(run_features)
         split = "test" if ordinal in test_ordinals else "train"
         if split == "test":
             test_run_ids.add(run_id)
@@ -319,6 +347,9 @@ def _build_randomized_ml_training_corpus(
             {
                 "run_id": run_id,
                 "split": split,
+                "original_rows": original_rows,
+                "sampled_rows": len(run_dataset),
+                "sampling": sampling,
                 "config": run_cfg.model_dump(mode="json"),
             }
         )
@@ -328,6 +359,11 @@ def _build_randomized_ml_training_corpus(
         "corpus_seed": corpus_seed,
         "test_share": test_share,
         "step_minutes": step_minutes,
+        "sample_rows_per_run": sample_rows_per_run,
+        "sampling_strategy": (
+            "balanced_rul_buckets_per_run" if sample_rows_per_run else "full_runs"
+        ),
+        "rul_sample_buckets_h": _json_rul_sample_buckets(),
         "runs": run_metadata,
     }
     return (
@@ -336,6 +372,108 @@ def _build_randomized_ml_training_corpus(
         test_run_ids,
         metadata,
     )
+
+
+def _sample_training_run(
+    dataset: pd.DataFrame,
+    features: pd.DataFrame,
+    *,
+    max_rows: int,
+    rng: np.random.Generator,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, object]]:
+    """Keeps a balanced per-run sample across RUL horizons without mixing runs."""
+    if max_rows <= 0 or len(dataset) <= max_rows:
+        return (
+            dataset.reset_index(drop=True),
+            features.reset_index(drop=True),
+            {"enabled": False, "kept_rows": int(len(dataset))},
+        )
+    if len(dataset) != len(features):
+        raise ValueError("Dataset and feature row counts must match before sampling.")
+    if "RUL_oracle_h" not in dataset.columns:
+        raise ValueError("RUL_oracle_h is required for balanced training sampling.")
+
+    working = dataset[["RUL_oracle_h"]].copy()
+    working["bucket"] = pd.cut(
+        working["RUL_oracle_h"],
+        bins=ML_RUL_SAMPLE_BUCKETS_H,
+        include_lowest=True,
+        right=False,
+    )
+    groups = [
+        group.index.to_numpy()
+        for _, group in working.dropna(subset=["bucket"]).groupby("bucket", observed=True)
+    ]
+    missing_target = working[working["bucket"].isna()].index.to_numpy()
+    if len(missing_target):
+        groups.append(missing_target)
+    groups = [indices for indices in groups if len(indices)]
+    if not groups:
+        selected = np.sort(rng.choice(dataset.index.to_numpy(), size=max_rows, replace=False))
+    else:
+        selected = _balanced_index_sample(groups, max_rows=max_rows, rng=rng)
+
+    sampled_dataset = dataset.loc[selected].reset_index(drop=True)
+    sampled_features = features.loc[selected].reset_index(drop=True)
+    bucket_counts = (
+        working.loc[selected, "bucket"]
+        .astype(str)
+        .value_counts()
+        .sort_index()
+        .to_dict()
+    )
+    return (
+        sampled_dataset,
+        sampled_features,
+        {
+            "enabled": True,
+            "original_rows": int(len(dataset)),
+            "kept_rows": int(len(sampled_dataset)),
+            "bucket_counts": {key: int(value) for key, value in bucket_counts.items()},
+        },
+    )
+
+
+def _json_rul_sample_buckets() -> list[float | str]:
+    """Returns JSON-safe bucket edges for training metadata."""
+    return [
+        "inf" if np.isinf(edge) else float(edge)
+        for edge in ML_RUL_SAMPLE_BUCKETS_H
+    ]
+
+
+def _balanced_index_sample(
+    groups: list[np.ndarray],
+    *,
+    max_rows: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Samples as evenly as possible from non-empty groups, redistributing spare quota."""
+    remaining = {index: group.copy() for index, group in enumerate(groups)}
+    selected: list[np.ndarray] = []
+    rows_left = max_rows
+    while rows_left > 0 and remaining:
+        quota = max(1, rows_left // len(remaining))
+        exhausted: list[int] = []
+        for index, indices in list(remaining.items()):
+            take = min(len(indices), quota, rows_left)
+            if take <= 0:
+                exhausted.append(index)
+                continue
+            sampled = rng.choice(indices, size=take, replace=False)
+            selected.append(sampled)
+            rows_left -= take
+            if take == len(indices):
+                exhausted.append(index)
+            else:
+                remaining[index] = np.setdiff1d(indices, sampled, assume_unique=False)
+            if rows_left == 0:
+                break
+        for index in exhausted:
+            remaining.pop(index, None)
+    if not selected:
+        return np.array([], dtype=int)
+    return np.sort(np.concatenate(selected))
 
 
 def _randomized_ml_config(
