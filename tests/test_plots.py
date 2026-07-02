@@ -70,6 +70,10 @@ def test_all_interactive_plots_are_plotly_figures(tmp_path) -> None:
     }
     assert all(isinstance(figure, go.Figure) for figure in figures.values())
     assert all(len(figure.data) > 0 for figure in figures.values())
+    source_figure = figures["rul_source_periods"]
+    assert source_figure.layout.xaxis2.matches == "x"
+    assert source_figure.layout.xaxis3.matches == "x"
+    assert source_figure.layout.xaxis4.matches is None
 
 
 def test_quality_issue_summary_reports_total_percentages() -> None:

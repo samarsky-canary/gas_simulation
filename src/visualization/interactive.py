@@ -307,7 +307,7 @@ def _rul_source_periods_plot(
         week_centers = weekly.index + pd.Timedelta(days=3.5)
         for column, label, color in (
             ("analytic", "аналитика", "#d62728"),
-            ("hybrid", "гибрид", "#ff7f0e"),
+            ("hybrid", "консерв. оц.", "#ff7f0e"),
             ("ml", "ML", "#1f77b4"),
         ):
             fig.add_trace(
@@ -324,6 +324,8 @@ def _rul_source_periods_plot(
     fig.update_yaxes(title_text="Источник", row=2, col=1)
     fig.update_yaxes(title_text="0...1", row=3, col=1)
     fig.update_yaxes(title_text="Решений", row=4, col=1)
+    fig.update_xaxes(matches="x", row=2, col=1)
+    fig.update_xaxes(matches="x", row=3, col=1)
     return _style_figure(
         fig,
         title="",
