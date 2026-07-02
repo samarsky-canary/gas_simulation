@@ -74,6 +74,8 @@ def test_all_interactive_plots_are_plotly_figures(tmp_path) -> None:
     assert source_figure.layout.xaxis2.matches == "x"
     assert source_figure.layout.xaxis3.matches == "x"
     assert source_figure.layout.xaxis4.matches is None
+    rul_trace_names = {trace.name for trace in figures["rul_comparison"].data}
+    assert "Истинный остаточный ресурс" in rul_trace_names
 
 
 def test_quality_issue_summary_reports_total_percentages() -> None:

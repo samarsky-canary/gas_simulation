@@ -490,6 +490,7 @@ def _randomized_ml_config(
     raw.update(SCENARIO_OVERRIDES[scenario_name])
 
     q_nominal = float(rng.uniform(450.0, 900.0))
+    q_operating = q_nominal * float(rng.uniform(0.75, 1.25))
     p_nominal = float(rng.uniform(0.45, 0.8))
     k_s_per_hour = _training_k_s_per_hour(
         scenario_name, float(raw["k_s_per_hour"]), rng
@@ -502,8 +503,9 @@ def _randomized_ml_config(
             "seed": corpus_seed_for_run(corpus_seed, ordinal),
             "a_q": float(rng.uniform(0.06, 0.25)),
             "q_nominal_m3h": q_nominal,
-            "q_min_m3h": q_nominal * 0.5,
-            "q_max_m3h": q_nominal * 1.5,
+            "q_operating_m3h": q_operating,
+            "q_min_m3h": q_operating * 0.5,
+            "q_max_m3h": q_operating * 1.5,
             "q_process_std_m3h": float(rng.uniform(15.0, 90.0)),
             "p_in_nominal_mpa": p_nominal,
             "p_min_mpa": p_nominal * 0.5,

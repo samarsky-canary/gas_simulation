@@ -31,7 +31,8 @@ class ScenarioConfig(BaseModel):
     step_minutes: int = Field(default=5, gt=0)                                      # Шаг дискретизации временного ряда в минутах.
     seed: int = 42                                                                  # Seed генератора случайных чисел для воспроизводимости.
 
-    q_nominal_m3h: float = Field(default=600.0, gt=0)                               # Номинальный расход газа через фильтр, м3/ч.
+    q_nominal_m3h: float = Field(default=600.0, gt=0)                               # Номинальный расход газа через фильтр по паспорту, м3/ч.
+    q_operating_m3h: float = Field(default=600.0, gt=0)                             # Фактический рабочий расход газа через фильтр, м3/ч.
     q_min_m3h: float = Field(default=150.0, ge=0)                                   # Нижняя граница допустимого истинного расхода, м3/ч.
     q_max_m3h: float = Field(default=1200.0, gt=0)                                  # Верхняя граница допустимого истинного расхода, м3/ч.
     a_q: float = Field(default=0.12, ge=0)                                          # Амплитуда суточного колебания расхода относительно номинала.
@@ -77,6 +78,17 @@ class ScenarioConfig(BaseModel):
 
     schema_version: str = "0.1.0"                                                   # Версия схемы конфигурации и выходных метаданных.
     timezone_name: str = "Europe/Astrakhan"                                         # Название часового пояса для интерпретации временной сетки.
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_operating_flow(cls, data: Any) -> Any:
+        """Если рабочий расход не задан явно, принимает его равным паспортному."""
+        if not isinstance(data, Mapping):
+            return data
+        values = dict(data)
+        if values.get("q_operating_m3h") is None:
+            values["q_operating_m3h"] = values.get("q_nominal_m3h", 600.0)
+        return values
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "ScenarioConfig":

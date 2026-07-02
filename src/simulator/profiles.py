@@ -23,8 +23,8 @@ def generate_profiles(
     k = np.arange(n)
     steps_per_day = max(int(24 * 60 / cfg.step_minutes), 1)
 
-    # Базовый расход задается суточной
-    q_base = cfg.q_nominal_m3h * (
+    # Базовый расход строится вокруг фактического рабочего режима, а не паспортного.
+    q_base = cfg.q_operating_m3h * (
         1
         + cfg.a_q * np.sin(2 * np.pi * k / steps_per_day)
     )
@@ -36,7 +36,7 @@ def generate_profiles(
         for start in starts:
             width = int(rng.integers(3, 18))
             end = min(start + width, n)
-            q[start:end] += rng.uniform(0.20, 0.45) * cfg.q_nominal_m3h
+            q[start:end] += rng.uniform(0.20, 0.45) * cfg.q_operating_m3h
 
     q = np.clip(q, cfg.q_min_m3h, cfg.q_max_m3h)
 

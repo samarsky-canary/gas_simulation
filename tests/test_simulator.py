@@ -6,6 +6,7 @@ import pandas as pd
 from src.simulator.config import ScenarioConfig
 from src.simulator.exporters import CANONICAL_DATASET_COLUMNS, export_run
 from src.simulator.labels import label_run
+from src.simulator.profiles import generate_profiles
 from src.simulator.runner import run_scenario
 
 
@@ -46,6 +47,28 @@ def test_export_run_writes_canonical_dataset_schema(tmp_path) -> None:
     assert paths["dataset_csv"].exists()
     assert paths["dataset_schema"].exists()
     assert not any("_ru" in name for name in paths)
+
+
+def test_operating_flow_defaults_to_nominal_flow() -> None:
+    cfg = ScenarioConfig(q_nominal_m3h=750.0)
+
+    assert cfg.q_operating_m3h == cfg.q_nominal_m3h
+
+
+def test_flow_profile_uses_actual_operating_flow() -> None:
+    cfg = ScenarioConfig(
+        q_nominal_m3h=1000.0,
+        q_operating_m3h=400.0,
+        q_min_m3h=200.0,
+        q_max_m3h=600.0,
+        a_q=0.0,
+        q_process_std_m3h=0.0,
+    )
+    idx = pd.date_range(cfg.start_time, periods=12, freq="30min")
+
+    profiles = generate_profiles(cfg, idx, np.random.default_rng(cfg.seed))
+
+    assert np.allclose(profiles["q_true_m3h"], cfg.q_operating_m3h)
 
 
 def test_analytic_rul_is_unknown_for_near_zero_observed_delta_p() -> None:

@@ -174,8 +174,11 @@ def _rul_comparison_plot(
     df: pd.DataFrame,
     decisions: pd.DataFrame | None,
 ) -> go.Figure:
+    rul_columns = [
+        column for column in ["rul_oracle_h", "rul_analytic_h"] if column in df.columns
+    ]
     rul_data = (
-        df.set_index("timestamp")[["rul_analytic_h"]]
+        df.set_index("timestamp")[rul_columns]
         .resample("1h")
         .mean()
         .reset_index()
@@ -190,6 +193,9 @@ def _rul_comparison_plot(
             "Остаточный ресурс по ML",
             "Итоговый остаточный ресурс",
         ),
+    )
+    _add_line(
+        fig, 1, rul_data, "rul_oracle_h", "Истинный остаточный ресурс", "#2ca02c"
     )
     _add_line(
         fig, 1, rul_data, "rul_analytic_h", "Аналитический остаточный ресурс", "#8c564b"
