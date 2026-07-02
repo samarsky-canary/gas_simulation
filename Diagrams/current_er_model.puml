@@ -29,107 +29,135 @@ skinparam note {
 hide circle
 
 ' =====================================================
-' 1. СПРАВОЧНИКИ И КОНФИГУРАЦИЯ
+' 1. КОНФИГУРАЦИЯ И ЗАПУСК
 ' =====================================================
 
-package "1. Справочники\nи конфигурация" as P_CONFIG {
+package "1. Конфигурация\nи запуск" as P_CONFIG {
 
-  entity "filters\nГазовые фильтры" as Filters {
-    * filter_id : uuid <<PK>>
+  entity "GasFilter\nГазовый фильтр" as Filter {
+    * filter_id
     --
-    name : varchar
-    location : varchar
-    q_nominal_m3h : numeric
-    dp_warn_kpa : numeric
-    dp_crit_kpa : numeric
+    q_nominal
+    p_in_nominal
+    dp0
+    dp_warn
+    dp_crit
   }
 
-  entity "scenarios\nСценарии" as Scenarios {
-    * scenario_id : uuid <<PK>>
+  entity "ScenarioConfig\nКонфигурация сценария" as Config {
+    * scenario_name
     --
-    scenario_name : varchar
-    duration_days : int
-    step_minutes : int
-    seed : int
+    duration_days
+    step_minutes
+    seed
+    degradation_params
+    sensor_fault_params
+    rul_thresholds
   }
 
-  entity "simulation_runs\nПрогоны" as Runs {
-    * run_id : uuid <<PK>>
+  entity "SimulationRun\nПрогон симуляции" as Run {
+    * run_id
     --
-    filter_id : uuid <<FK>>
-    scenario_id : uuid <<FK>>
-    started_at : timestamp
-    config_hash : varchar
+    started_at
+    config_hash
+    rows_count
   }
 
-  Filters -down- Runs : используется в
-  Scenarios -down- Runs : задаёт условия
+  Filter ||--o{ Run : используется\nв прогоне
+  Config ||--o{ Run : задает\nусловия
 }
 
 ' =====================================================
-' 2. ТЕЛЕМЕТРИЯ И ДАННЫЕ СИМУЛЯТОРА
+' 2. ВРЕМЕННОЙ РЯД СИМУЛЯТОРА
 ' =====================================================
 
-package "2. Телеметрия\nи данные симулятора" as P_TELEMETRY {
+package "2. Временной ряд\nсимулятора" as P_SERIES {
 
-  entity "telemetry_snapshots\nСнимки телеметрии" as Telemetry {
-    * snapshot_id : uuid <<PK>>
+  entity "TelemetrySnapshot\nНаблюдаемая телеметрия" as Telemetry {
+    * run_id
+    * timestamp
     --
-    run_id : uuid <<FK>>
-    timestamp : timestamp
-    p_in_mpa : numeric
-    p_out_mpa : numeric
-    delta_p_kpa : numeric
-    q_m3h : numeric
-    t_c : numeric
-    quality_code : varchar
-    fault_flags : text
+    p_in
+    p_out
+    delta_p
+    q
+    t
+    quality_code
+    spike_event
+    state_obs
   }
 
-  entity "truth_labels\nИстинные значения" as Truth {
-    * truth_id : uuid <<PK>>
+  entity "TruthState\nСкрытое состояние" as Truth {
+    * run_id
+    * timestamp
     --
-    snapshot_id : uuid <<FK>>
-    clog_level : numeric
-    state_true : varchar
-    rul_oracle_h : numeric
-    is_rul_unknown : boolean
-    maintenance_event : boolean
+    q_true
+    p_in_true
+    p_out_true
+    delta_p_true
+    resistance_factor
+    clog_level
+    rul_oracle
+    is_rul_unknown
   }
 
-  entity "quality_reports\nОтчёты качества" as QC {
-    * qc_report_id : uuid <<PK>>
+  entity "QualityReport\nОтчет качества" as QC {
+    * run_id
     --
-    run_id : uuid <<FK>>
-    rows_total : int
-    rows_with_issues : int
-    pressure_order_ok : boolean
-    nonnegative_dp_ok : boolean
-    nonnegative_q_ok : boolean
+    rows_total
+    rows_with_issues
+    quality_counts
+    pressure_order_ok
+    nonnegative_dp_ok
+    nonnegative_q_ok
   }
 
-  Telemetry -down- Truth : имеет\nразметку
-  Telemetry -down- QC : участвует\nв отчёте
+  Run ||--o{ Telemetry : формирует\nнаблюдения
+  Run ||--o{ Truth : формирует\nскрытую истину
+  Run ||--|| QC : проверяется
+  Telemetry ||--|| Truth : соответствует\nтой же точке времени
 }
 
 ' =====================================================
-' 3. ДИАГНОСТИЧЕСКИЕ ПРИЗНАКИ
+' 3. ДАТАСЕТ И ПРИЗНАКИ
 ' =====================================================
 
-package "3. Диагностические\nпризнаки" as P_FEATURES {
+package "3. Датасет\nи признаки" as P_FEATURES {
 
-  entity "diagnostic_features\nПризнаки" as Features {
-    * feature_id : uuid <<PK>>
+  entity "CanonicalDatasetRow\nСтрока датасета" as Dataset {
+    * run_id
+    * timestamp
     --
-    snapshot_id : uuid <<FK>>
-    delta_p_norm_kpa : numeric
-    delta_p_roll_mean_1h : numeric
-    delta_p_roll_std_1h : numeric
-    delta_p_slope_6h : numeric
-    q_roll_mean_1h : numeric
-    missing_rate_1h : numeric
-    time_above_warn : numeric
+    observed_channels
+    passport_params
+    degradation_params
+    deltaP_norm
+    state
+    RUL_oracle
+    RUL_analytic
+    quality_code
   }
+
+  entity "DiagnosticFeatureSet\nДиагностические признаки" as Features {
+    * run_id
+    * timestamp
+    --
+    deltaP_roll_mean_1h
+    deltaP_roll_std_1h
+    deltaP_slope_6h
+    deltaP_roll_mean_24h
+    deltaP_slope_24h
+    deltaP_slope_72h
+    Q_roll_mean_1h
+    missing_rate_1h
+    time_above_warn
+    elapsed_hours
+    cumulative_load_h
+  }
+
+  Telemetry ||--|| Dataset : входит\nв датасет
+  Truth ||--|| Dataset : добавляет\nцелевые поля
+  Dataset ||--o| Features : преобразуется\nв признаки
 }
 
 ' =====================================================
@@ -138,154 +166,136 @@ package "3. Диагностические\nпризнаки" as P_FEATURES {
 
 package "4. Прогнозирование\nRUL" as P_PREDICTION {
 
-  entity "analytic_predictions\nАналитический RUL" as Analytic {
-    * analytic_prediction_id : uuid <<PK>>
+  entity "AnalyticRUL\nАналитический прогноз" as Analytic {
+    * run_id
+    * timestamp
     --
-    snapshot_id : uuid <<FK>>
-    rul_analytic_h : numeric
-    rule_state : varchar
-    rule_recommendation : varchar
-    rule_reason : text
+    RUL_analytic
+    state_rule
+    threshold_logic
   }
 
-  entity "ml_models\nML-модели" as MLModels {
-    * model_id : uuid <<PK>>
+  entity "MLTrainingCorpus\nКорпус обучения ML" as Corpus {
+    * corpus_id
     --
-    model_type : varchar
-    target_column : varchar
-    artifact_path : varchar
-    trained_at : timestamp
+    generated_runs
+    train_run_ids
+    test_run_ids
+    split_type
   }
 
-  entity "ml_predictions\nML-прогноз RUL" as MLPred {
-    * ml_prediction_id : uuid <<PK>>
+  entity "MLModel\nML-модель RUL" as MLModel {
+    * model_name
     --
-    snapshot_id : uuid <<FK>>
-    model_id : uuid <<FK>>
-    split : varchar
-    rul_ml_h : numeric
-    rul_oracle_h : numeric
+    model_type
+    target
+    input_columns
+    trained_at
+    metrics
+    artifact
   }
 
-  entity "ml_metrics\nМетрики ML" as MLMetrics {
-    * metric_id : uuid <<PK>>
+  entity "MLPrediction\nML-прогноз RUL" as MLPrediction {
+    * run_id
+    * timestamp
     --
-    model_id : uuid <<FK>>
-    run_id : uuid <<FK>>
-    mae_h : numeric
-    rmse_h : numeric
-    r2 : numeric
+    split
+    RUL_pred
+    RUL_oracle
   }
 
-  MLModels -down- MLPred : строит\nпрогноз
-  MLModels -down- MLMetrics : оценивается
+  entity "ModelQuality\nКачество модели" as ModelQuality {
+    * model_name
+    * evaluation_scope
+    --
+    mae
+    rmse
+    r2
+    by_run_id
+    by_scenario
+    analytic_comparison
+  }
+
+  Dataset ||--o{ Corpus : используется\nдля обучения
+  Features ||--o{ Corpus : входит\nв ML-входы
+  Corpus ||--|| MLModel : обучает
+  MLModel ||--o{ MLPrediction : строит\nпрогноз
+  Dataset ||--o| Analytic : дает\nаналитику
+  Dataset ||--o| MLPrediction : точка\ninference
+  Features ||--o| MLPrediction : признаки\ninference
+  MLModel ||--o{ ModelQuality : оценивается
 }
 
 ' =====================================================
-' 5. ГИБРИДНЫЕ РЕШЕНИЯ
+' 5. ГИБРИДНЫЙ СЛОЙ И ЭКСПЛУАТАЦИОННЫЕ СОБЫТИЯ
 ' =====================================================
 
-package "5. Гибридные\nрешения" as P_HYBRID {
+package "5. Гибридный слой\nи события" as P_HYBRID {
 
-  entity "hybrid_decisions\nГибридные решения" as Hybrid {
-    * decision_id : uuid <<PK>>
+  entity "HybridDecision\nИтоговый RUL" as Hybrid {
+    * run_id
+    * timestamp
     --
-    snapshot_id : uuid <<FK>>
-    analytic_prediction_id : uuid <<FK>>
-    ml_prediction_id : uuid <<FK>>
-    rul_fused_h : numeric
-    rul_source : varchar
-    confidence_data : numeric
-    confidence_model : numeric
-    confidence_consistency : numeric
-    confidence_total : numeric
-    action : varchar
-    priority : varchar
-    due_time_h : numeric
-    explanation : text
-  }
-}
-
-' =====================================================
-' 6. ЗАДАЧИ ТО И ПОЛЬЗОВАТЕЛИ
-' =====================================================
-
-package "6. Техническое\nобслуживание" as P_TASKS {
-
-  entity "maintenance_tasks\nЗадачи ТО" as Tasks {
-    * task_id : uuid <<PK>>
-    --
-    decision_id : uuid <<FK>>
-    filter_id : uuid <<FK>>
-    task_type : varchar
-    priority : varchar
-    status : varchar
-    due_at : timestamp
-    assigned_to : uuid <<FK>>
+    RUL_fused
+    rul_source
+    confidence_data
+    confidence_model
+    confidence_consistency
+    confidence_total
   }
 
-  entity "users\nПользователи" as Users {
-    * user_id : uuid <<PK>>
+  entity "MaintenanceEvent\nСобытие обслуживания" as Maintenance {
+    * run_id
+    * event_type
     --
-    full_name : varchar
-    role : varchar
+    detected_at
+    threshold_rul
+    source
+    stable_window
   }
 
-  Users -down- Tasks : исполняет
+  Analytic ||--o| Hybrid : источник\nRUL_analytic
+  MLPrediction ||--o| Hybrid : источник\nRUL_ml
+  Dataset ||--o| Hybrid : качество\nи состояние
+  Features ||--o| Hybrid : признаки\nдоверия
+  Hybrid ||--o{ Maintenance : пересекает\nRUL-пороги
 }
 
 ' =====================================================
 ' ГЛАВНЫЙ ПОТОК ДАННЫХ
 ' =====================================================
 
-Runs ||--o{ Telemetry : формирует
-Runs ||--o{ QC : проверяется
-
-Telemetry ||--o| Features : преобразуется\nв признаки
-Telemetry ||--o| Analytic : используется\nаналитикой
-Features ||--o| Analytic : входные\nпризнаки
-
-Telemetry ||--o| MLPred : используется\nML
-Features ||--o| MLPred : входные\nпризнаки
-Runs ||--o{ MLMetrics : метрики\nпо прогону
-
-Analytic ||--o| Hybrid : RUL_analytic
-MLPred ||--o| Hybrid : RUL_ml
-Telemetry ||--o| Hybrid : качество\nданных
-
-Hybrid ||--o| Tasks : создаёт\nзадачу
-Filters ||--o{ Tasks : обслуживается
-
-' =====================================================
-' СКРЫТЫЕ СВЯЗИ ДЛЯ РОВНОЙ КОМПОНОВКИ
-' =====================================================
-
-P_CONFIG -[hidden]right-> P_TELEMETRY
-P_TELEMETRY -[hidden]right-> P_FEATURES
+P_CONFIG -[hidden]right-> P_SERIES
+P_SERIES -[hidden]right-> P_FEATURES
 P_FEATURES -[hidden]right-> P_PREDICTION
 P_PREDICTION -[hidden]right-> P_HYBRID
-P_HYBRID -[hidden]right-> P_TASKS
 
-' =====================================================
-' КОРОТКИЕ ПОЯСНЕНИЯ
-' =====================================================
-
-note top of Telemetry
-  Центральная таблица временного ряда:
-  одна строка соответствует одному
-  телеметрическому снимку фильтра.
+note top of Run
+  Прогон является центральным контекстом:
+  все временные точки, признаки, прогнозы
+  и оценки качества относятся к run_id.
 end note
 
-note top of Features
-  Признаки рассчитываются по окну:
-  нормированный перепад, скользящие
-  статистики, тренд, доля пропусков.
+note top of Dataset
+  Строка датасета объединяет наблюдаемую
+  телеметрию, паспортные параметры фильтра,
+  скрытую истину симулятора и аналитический RUL.
+
+  Скрытые/целевые поля используются для оценки,
+  но не подаются на вход ML-модели.
+end note
+
+note top of MLModel
+  ML-модель обучается отдельно на корпусе
+  независимых прогонов и затем переиспользуется
+  для inference текущего запуска.
 end note
 
 note top of Hybrid
-  Гибридный слой объединяет:
-  RUL_analytic, RUL_ml,
-  качество данных и согласованность.
+  Гибридный слой выбирает итоговый RUL:
+  ML-прогноз, консервативный минимум или
+  аналитический fallback с учетом доверия
+  к данным, модели и согласованности.
 end note
 
 @enduml

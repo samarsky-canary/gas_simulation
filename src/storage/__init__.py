@@ -1,3 +1,3 @@
-from src.storage.postgres import StoredMLTraining, TrainingRepository
+from src.storage.postgres import LatestRunRepository, StoredMLTraining, TrainingRepository
 
-__all__ = ["StoredMLTraining", "TrainingRepository"]
+__all__ = ["LatestRunRepository", "StoredMLTraining", "TrainingRepository"]

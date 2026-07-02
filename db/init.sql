@@ -24,3 +24,34 @@ CREATE TABLE IF NOT EXISTS ml_training_runs (
 CREATE INDEX IF NOT EXISTS ix_ml_training_runs_latest
     ON ml_training_runs (model_id, trained_at DESC)
     WHERE status = 'completed';
+
+CREATE TABLE IF NOT EXISTS latest_run_metadata (
+    singleton_id boolean PRIMARY KEY DEFAULT true CHECK (singleton_id),
+    run_id text NOT NULL,
+    scenario_name text NOT NULL,
+    filter_id text NOT NULL,
+    saved_at timestamptz NOT NULL DEFAULT now(),
+    row_count integer NOT NULL CHECK (row_count >= 0),
+    feature_row_count integer NOT NULL CHECK (feature_row_count >= 0),
+    config jsonb NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS latest_run_raw_metrics (
+    row_index integer PRIMARY KEY,
+    run_id text NOT NULL,
+    timestamp timestamptz NOT NULL,
+    payload jsonb NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_latest_run_raw_metrics_timestamp
+    ON latest_run_raw_metrics (timestamp);
+
+CREATE TABLE IF NOT EXISTS latest_run_features (
+    row_index integer PRIMARY KEY,
+    run_id text NOT NULL,
+    timestamp timestamptz NOT NULL,
+    payload jsonb NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_latest_run_features_timestamp
+    ON latest_run_features (timestamp);

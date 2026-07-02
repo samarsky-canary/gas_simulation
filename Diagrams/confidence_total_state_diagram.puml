@@ -102,11 +102,4 @@ note right of CheckPhysicalViolation
   вето не включается на этом шаге.
 end note
 
-note right of CalculateTotal
-  В текущей реализации confidence_total
-  не выбирается отдельным правилом,
-  а вычисляется как произведение трех
-  частных оценок доверия.
-end note
-
 @enduml

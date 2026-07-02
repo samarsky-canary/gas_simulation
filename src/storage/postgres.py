@@ -9,6 +9,8 @@ from typing import Any
 from uuid import UUID
 
 import joblib
+import numpy as np
+import pandas as pd
 import psycopg
 from psycopg.types.json import Jsonb
 
@@ -42,6 +44,37 @@ CREATE TABLE IF NOT EXISTS ml_training_runs (
 CREATE INDEX IF NOT EXISTS ix_ml_training_runs_latest
     ON ml_training_runs (model_id, trained_at DESC)
     WHERE status = 'completed';
+
+CREATE TABLE IF NOT EXISTS latest_run_metadata (
+    singleton_id boolean PRIMARY KEY DEFAULT true CHECK (singleton_id),
+    run_id text NOT NULL,
+    scenario_name text NOT NULL,
+    filter_id text NOT NULL,
+    saved_at timestamptz NOT NULL DEFAULT now(),
+    row_count integer NOT NULL CHECK (row_count >= 0),
+    feature_row_count integer NOT NULL CHECK (feature_row_count >= 0),
+    config jsonb NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS latest_run_raw_metrics (
+    row_index integer PRIMARY KEY,
+    run_id text NOT NULL,
+    timestamp timestamptz NOT NULL,
+    payload jsonb NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_latest_run_raw_metrics_timestamp
+    ON latest_run_raw_metrics (timestamp);
+
+CREATE TABLE IF NOT EXISTS latest_run_features (
+    row_index integer PRIMARY KEY,
+    run_id text NOT NULL,
+    timestamp timestamptz NOT NULL,
+    payload jsonb NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_latest_run_features_timestamp
+    ON latest_run_features (timestamp);
 """
 
 
@@ -174,6 +207,83 @@ class TrainingRepository:
         )
 
 
+class LatestRunRepository:
+    """Хранилище сырых метрик и признаков последнего пользовательского прогона."""
+
+    def __init__(self, database_url: str):
+        if not database_url:
+            raise ValueError("DATABASE_URL is required.")
+        self.database_url = database_url
+
+    @classmethod
+    def from_env(cls) -> "LatestRunRepository":
+        return cls(os.environ.get("DATABASE_URL", ""))
+
+    def initialize(self) -> None:
+        with psycopg.connect(self.database_url) as connection:
+            connection.execute(SCHEMA_SQL)
+
+    def replace(
+        self,
+        *,
+        cfg: Any,
+        raw_metrics: pd.DataFrame,
+        features: pd.DataFrame,
+    ) -> None:
+        """Заменяет содержимое таблиц последнего прогона свежими данными."""
+        run_id = _first_value(raw_metrics, "run_id")
+        filter_id = _first_value(raw_metrics, "filter_id")
+        scenario_name = getattr(cfg, "scenario_name", _first_value(raw_metrics, "scenario_id"))
+        config = (
+            cfg.model_dump(mode="json")
+            if hasattr(cfg, "model_dump")
+            else _to_jsonable(cfg)
+        )
+        raw_rows = _dataframe_payload_rows(raw_metrics)
+        feature_rows = _dataframe_payload_rows(features)
+
+        with psycopg.connect(self.database_url) as connection:
+            connection.execute(SCHEMA_SQL)
+            connection.execute("TRUNCATE latest_run_features, latest_run_raw_metrics")
+            connection.execute("DELETE FROM latest_run_metadata")
+            connection.execute(
+                """
+                INSERT INTO latest_run_metadata (
+                    singleton_id, run_id, scenario_name, filter_id,
+                    row_count, feature_row_count, config
+                )
+                VALUES (true, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    run_id,
+                    scenario_name,
+                    filter_id,
+                    len(raw_metrics),
+                    len(features),
+                    Jsonb(config),
+                ),
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO latest_run_raw_metrics (
+                        row_index, run_id, timestamp, payload
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    raw_rows,
+                )
+                cursor.executemany(
+                    """
+                    INSERT INTO latest_run_features (
+                        row_index, run_id, timestamp, payload
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    feature_rows,
+                )
+
+
 def _serialize_model(model: Any) -> bytes:
     buffer = io.BytesIO()
     joblib.dump(model, buffer)
@@ -182,3 +292,52 @@ def _serialize_model(model: Any) -> bytes:
 
 def _deserialize_model(artifact: bytes) -> Any:
     return joblib.load(io.BytesIO(artifact))
+
+
+def _dataframe_payload_rows(
+    data: pd.DataFrame,
+) -> list[tuple[int, str, datetime, Jsonb]]:
+    rows: list[tuple[int, str, datetime, Jsonb]] = []
+    for row_index, record in enumerate(data.to_dict(orient="records")):
+        payload = {key: _to_jsonable(value) for key, value in record.items()}
+        run_id = str(payload.get("run_id") or "")
+        timestamp = _timestamp_value(record.get("timestamp"))
+        if not run_id:
+            raise ValueError("DataFrame row has empty run_id.")
+        if timestamp is None:
+            raise ValueError("DataFrame row has empty timestamp.")
+        rows.append((row_index, run_id, timestamp, Jsonb(payload)))
+    return rows
+
+
+def _timestamp_value(value: object) -> datetime | None:
+    if value is None or pd.isna(value):
+        return None
+    timestamp = pd.Timestamp(value)
+    if pd.isna(timestamp):
+        return None
+    return timestamp.to_pydatetime()
+
+
+def _first_value(data: pd.DataFrame, column: str) -> str:
+    if column not in data.columns or data.empty:
+        return ""
+    value = data[column].iloc[0]
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
+def _to_jsonable(value: object) -> object:
+    if isinstance(value, pd.Timestamp):
+        return None if pd.isna(value) else value.isoformat()
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        value = value.item()
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value

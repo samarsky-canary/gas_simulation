@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,9 +15,9 @@ from src.hybrid import (
 )
 from src.ml import predict_and_export_ml_baseline, train_ml_baseline
 from src.simulator.config import SCENARIO_OVERRIDES, ScenarioConfig, load_config
-from src.simulator.exporters import build_canonical_dataset, export_run
+from src.simulator.exporters import OBSERVED_COLUMNS, build_canonical_dataset, export_run
 from src.simulator.runner import run_scenario
-from src.storage import StoredMLTraining, TrainingRepository
+from src.storage import LatestRunRepository, StoredMLTraining, TrainingRepository
 
 
 OUTPUT_LABELS = {
@@ -56,6 +57,8 @@ ML_DEFAULT_DATASET_COUNT = 100
 ML_DEFAULT_TEST_SHARE = 0.2
 ML_DEFAULT_CORPUS_SEED = 20260614
 ML_DEFAULT_STEP_MINUTES = 30
+LATEST_RUN_STORAGE_ENV = "LATEST_RUN_STORAGE"
+LATEST_RUN_STORAGE_POSTGRES = "postgres"
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,13 @@ def run_pipeline(
     feature_paths = export_features(cfg, features, output_dir, export_csv=False)
     repository = training_repository or TrainingRepository.from_env()
     repository.initialize()
+    if _latest_run_storage_backend() == LATEST_RUN_STORAGE_POSTGRES:
+        latest_run_repository = LatestRunRepository.from_env()
+        latest_run_repository.replace(
+            cfg=cfg,
+            raw_metrics=df[OBSERVED_COLUMNS].copy(),
+            features=features,
+        )
     stored_training = repository.load_latest()
     ml_predictions, ml_paths = predict_and_export_ml_baseline(
         dataset,
@@ -112,6 +122,11 @@ def run_pipeline(
         ml_paths=ml_paths,
         hybrid_paths=hybrid_paths,
     )
+
+
+def _latest_run_storage_backend() -> str:
+    """Возвращает backend хранения последнего прогона: files по умолчанию."""
+    return os.environ.get(LATEST_RUN_STORAGE_ENV, "files").strip().lower()
 
 
 def main() -> None:
