@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import secrets
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,9 @@ BASE_CONFIG_PATH = Path("configs/base.yaml")
 OUTPUT_ROOT = Path("outputs/ui_runs")
 PRG_SCHEME_IMAGE = Path("docs/prg_scheme2.png")
 PRG_SCHEME_WIDTH_PX = 641
+DEFAULT_UI_START_DATE = date(2026, 7, 1)
+FIRST_UI_RUN_SEED = 42
+MAX_RANDOM_SEED = 2**32 - 1
 
 GRAPH_CHOICES = {
     "Давление до и после фильтра": "pressure",
@@ -63,6 +67,14 @@ def _metric_value(value: float | None, suffix: str = "") -> str:
     return f"{value:,.1f}{suffix}".replace(",", " ")
 
 
+def _next_ui_seed() -> int:
+    run_count = int(st.session_state.get("ui_run_count", 0))
+    st.session_state["ui_run_count"] = run_count + 1
+    if run_count == 0:
+        return FIRST_UI_RUN_SEED
+    return secrets.randbelow(MAX_RANDOM_SEED + 1)
+
+
 def main() -> None:
     st.set_page_config(
         page_title="Расчёт остаточного ресурса ФГ на узле ПРГ",
@@ -100,7 +112,7 @@ def main() -> None:
         with st.form("simulation_form"):
             start_date = st.date_input(
                 "Дата начала",
-                value=base_cfg.start_time.date(),
+                value=DEFAULT_UI_START_DATE,
             )
             start_time = st.time_input(
                 "Время начала",
@@ -252,6 +264,7 @@ def main() -> None:
         overrides = {
             "scenario_name": scenario_name,
             "start_time": start_datetime.isoformat(),
+            "seed": _next_ui_seed(),
             "duration_days": int(duration_days),
             "step_minutes": int(step_minutes),
             "q_nominal_m3h": float(q_nominal_m3h),
