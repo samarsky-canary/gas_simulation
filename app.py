@@ -27,6 +27,7 @@ PRG_SCHEME_WIDTH_PX = 641
 DEFAULT_UI_START_DATE = date(2026, 7, 1)
 FIRST_UI_RUN_SEED = 42
 MAX_RANDOM_SEED = 2**32 - 1
+K_S_UI_STEP_PER_A_Q_PERCENT = 0.00001
 
 GRAPH_CHOICES = {
     "Перепад давления": "delta_p",
@@ -176,13 +177,16 @@ def main() -> None:
                 format="%.1f",
                 key=f"a_q_percent_{scenario_name}",
             )
-            k_s_per_hour = st.number_input(
+            a_q_delta_percent = float(a_q_percent) - scenario_a_q * 100.0
+            k_s_per_hour = max(
+                scenario_k_s_per_hour
+                + a_q_delta_percent * K_S_UI_STEP_PER_A_Q_PERCENT,
+                0.0,
+            )
+            st.metric(
                 "Базовая скорость роста засорения, 1/ч",
-                min_value=0.0,
-                value=scenario_k_s_per_hour,
-                step=0.00001,
-                format="%.8f",
-                key=f"k_s_per_hour_{scenario_name}",
+                f"{k_s_per_hour:.8f}",
+                delta=f"{a_q_delta_percent:+.1f} шаг(а)",
             )
             st.subheader("Пороги обслуживания")
             planned_maintenance_rul_h = st.number_input(

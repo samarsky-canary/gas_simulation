@@ -165,7 +165,7 @@ def _confidence_model(row: pd.Series) -> float:
     rul_ml = row.get("RUL_ml_h", np.nan)
     if pd.isna(rul_ml) or float(rul_ml) < 0:
         return 0.0
-    return 0.75
+    return 0.7
 
 
 def _confidence_consistency(cfg: ScenarioConfig, row: pd.Series) -> float:
